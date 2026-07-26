@@ -38,3 +38,4 @@ tsconfig.tsbuildinfo
 
 # runtime media storage
 /storage/
+.deploy-secrets/

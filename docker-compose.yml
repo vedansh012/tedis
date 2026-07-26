@@ -1,0 +1,38 @@
+# Local development infrastructure. `pnpm infra:up` to start.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tedis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tedis
+      POSTGRES_PASSWORD: tedis
+      POSTGRES_DB: tedis
+    ports:
+      - "5432:5432"
+    volumes:
+      - tedis-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tedis -d tedis"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tedis-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - tedis-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tedis-pg:
+  tedis-redis:

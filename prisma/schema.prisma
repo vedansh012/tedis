@@ -1,0 +1,1162 @@
+// TedIS — production schema.
+// Conventions:
+//  - ids: cuid() (sortable-ish, safe to expose, no enumeration).
+//  - domain content tables carry createdAt/updatedAt/deletedAt (soft delete).
+//  - auth/token tables are hard-deletable (they are ephemeral by nature).
+//  - money/counters are never trusted from client; denormalized counts are
+//    maintained by services and are eventually-consistent caches.
+//  - all FK-heavy lookups are indexed; list queries use keyset pagination on (createdAt,id).
+
+generator client {
+  provider        = "prisma-client-js"
+  // pg_trgm powers fuzzy search; pgcrypto for gen_random_uuid; citext for CI uniqueness.
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, citext]
+}
+
+// ============================================================
+// IDENTITY & AUTH
+// ============================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  BANNED
+}
+
+// Platform-wide roles for the admin panel (distinct from project/community roles).
+enum UserRole {
+  USER
+  SUPPORT
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+model User {
+  id            String     @id @default(cuid())
+  // citext -> case-insensitive uniqueness without lower() gymnastics.
+  email         String     @unique @db.Citext
+  emailVerified DateTime?
+  username      String     @unique @db.Citext
+  displayName   String
+  status        UserStatus @default(ACTIVE)
+  role          UserRole   @default(USER)
+  isSystem      Boolean    @default(false)
+
+  // security posture flags (denormalized for fast auth-path checks)
+  mfaEnabled   Boolean   @default(false)
+  lockedUntil  DateTime?
+  failedLogins Int       @default(0)
+
+  // null until the user finishes onboarding (picks Interests + username).
+  onboardedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  password      PasswordCredential?
+  profile       Profile?
+  oauthAccounts OAuthAccount[]
+  passkeys      Passkey[]
+  totp          MfaTotp?
+  backupCodes   MfaBackupCode[]
+  sessions      Session[]
+  loginEvents   LoginEvent[]
+  devices       Device[]
+  tokens        VerificationToken[]
+
+  interests          UserInterest[]
+  followers          Follow[]                  @relation("following") // rows where this user is followed
+  following          Follow[]                  @relation("follower") // rows where this user follows
+  posts              Post[]
+  comments           Comment[]
+  reactions          Reaction[]
+  bookmarks          Bookmark[]
+  postShares         PostShare[]
+  ownedProjects      Project[]                 @relation("projectOwner")
+  contributions      ProjectContributor[]
+  memberships        CommunityMembership[]
+  threads            Thread[]
+  threadReplies      ThreadReply[]
+  conversations      ConversationParticipant[]
+  messages           Message[]
+  messageReactions   MessageReaction[]
+  notifications      Notification[]            @relation("notificationRecipient")
+  actedNotifications Notification[]            @relation("notificationActor")
+  learningProgress   LearningProgress[]
+  auditLogs          AuditLog[]
+  reportsFiled       Report[]                  @relation("reporter")
+  blocking           Block[]                   @relation("blocker") // users this user has blocked
+  blockedBy          Block[]                   @relation("blocked") // users who have blocked this user
+
+  @@index([status])
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+// Separated from User so a leaked User row never exposes a hash,
+// and OAuth-only users simply have no row here.
+model PasswordCredential {
+  userId      String   @id
+  hash        String // argon2id
+  // force re-hash when params change or after breach.
+  algoVersion Int      @default(1)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_credentials")
+}
+
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+}
+
+model OAuthAccount {
+  id                String        @id @default(cuid())
+  userId            String
+  provider          OAuthProvider
+  providerAccountId String
+  // encrypted at rest by the service before persistence.
+  accessToken       String?
+  refreshToken      String?
+  expiresAt         DateTime?
+  createdAt         DateTime      @default(now())
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model Passkey {
+  id           String    @id @default(cuid())
+  userId       String
+  credentialId String    @unique // base64url of the raw credential id
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   String[] // ["internal","hybrid",...]
+  deviceType   String? // "singleDevice" | "multiDevice"
+  backedUp     Boolean   @default(false)
+  nickname     String?
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkeys")
+}
+
+model MfaTotp {
+  userId      String    @id
+  // encrypted secret; never returned to client after enrollment.
+  secret      String
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mfa_totp")
+}
+
+model MfaBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String // hashed, single-use
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_backup_codes")
+}
+
+// Opaque, DB-backed sessions. Cookie stores only the id + a secret half.
+model Session {
+  id                String    @id @default(cuid())
+  userId            String
+  // sha256 of the secret half of the token; DB never holds the plaintext.
+  hashedSecret      String
+  deviceId          String?
+  ipAddress         String?
+  userAgent         String?
+  // sliding expiry (touched) capped by absoluteExpiresAt.
+  expiresAt         DateTime
+  absoluteExpiresAt DateTime
+  // step-up: whether MFA was satisfied for this session.
+  mfaSatisfied      Boolean   @default(false)
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  lastActiveAt      DateTime  @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  // stable fingerprint hash (UA + platform hints); used to recognize known devices.
+  fingerprint String
+  name        String? // "Chrome on macOS"
+  lastSeenIp  String?
+  lastSeenAt  DateTime @default(now())
+  trusted     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("devices")
+}
+
+enum LoginEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  MFA_CHALLENGE
+  MFA_SUCCESS
+  MFA_FAILURE
+  PASSWORD_RESET
+  LOCKED_OUT
+}
+
+model LoginEvent {
+  id        String         @id @default(cuid())
+  userId    String?
+  type      LoginEventType
+  ipAddress String?
+  userAgent String?
+  // country/city resolved async; nullable.
+  geo       String?
+  reason    String? // e.g. "bad_password", "unknown_totp"
+  createdAt DateTime       @default(now())
+  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("login_events")
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  MAGIC_LINK
+}
+
+// One-time tokens. We store only a hash; raw token goes to the user's inbox.
+model VerificationToken {
+  id         String    @id @default(cuid())
+  userId     String
+  type       TokenType
+  tokenHash  String    @unique
+  // target email for magic-link/verify (may differ from current email during change).
+  target     String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// PROFILE & SOCIAL GRAPH
+// ============================================================
+
+model Profile {
+  userId     String  @id
+  headline   String? // current focus, NOT a job title. e.g. "Building a CV model"
+  bio        String? @db.Text
+  location   String?
+  websiteUrl String?
+  avatarUrl  String?
+  bannerUrl  String?
+  pronouns   String?
+
+  // denormalized counters (maintained by services)
+  followersCount Int @default(0)
+  followingCount Int @default(0)
+  projectsCount  Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills     ProfileSkill[]
+  experience Experience[]
+
+  @@map("profiles")
+}
+
+model Skill {
+  id       String         @id @default(cuid())
+  name     String         @unique @db.Citext
+  slug     String         @unique
+  profiles ProfileSkill[]
+
+  @@map("skills")
+}
+
+model ProfileSkill {
+  profileId  String
+  skillId    String
+  // demonstrated-vs-claimed signal; incremented when tied to projects.
+  proofCount Int     @default(0)
+  profile    Profile @relation(fields: [profileId], references: [userId], onDelete: Cascade)
+  skill      Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, skillId])
+  @@index([skillId])
+  @@map("profile_skills")
+}
+
+model Experience {
+  id        String    @id @default(cuid())
+  profileId String
+  title     String
+  org       String?
+  startDate DateTime?
+  endDate   DateTime?
+  current   Boolean   @default(false)
+  summary   String?   @db.Text
+  sortOrder Int       @default(0)
+  profile   Profile   @relation(fields: [profileId], references: [userId], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("experiences")
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId]) // "who follows X"
+  @@map("follows")
+}
+
+/** A one-directional block. The blocker no longer sees the blocked user's
+ *  content, and vice-versa (enforced in the feed/comment services). */
+model Block {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+  blocker   User     @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId]) // "who blocked X"
+  @@map("blocks")
+}
+
+// ============================================================
+// INTERESTS (the spine)
+// ============================================================
+
+model Interest {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String  @unique
+  tagline     String?
+  description String? @db.Text
+  // brand accent for per-interest theming.
+  accentColor String? // hex
+  iconKey     String? // maps to a lucide icon in the client
+  coverUrl    String?
+  // optional parent for sub-interests (AI -> LLMs). Self relation.
+  parentId    String?
+
+  membersCount  Int     @default(0)
+  projectsCount Int     @default(0)
+  isFeatured    Boolean @default(false)
+  sortOrder     Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  parent      Interest?          @relation("InterestTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Interest[]         @relation("InterestTree")
+  members     UserInterest[]
+  posts       Post[]
+  projects    Project[]
+  communities Community[]
+  resources   LearningResource[]
+  roadmaps    Roadmap[]
+
+  @@index([parentId])
+  @@index([isFeatured, sortOrder])
+  @@map("universes")
+}
+
+model UserInterest {
+  userId     String
+  interestId String @map("universeId")
+  // selection order from onboarding; primary interest surfaces first.
+  isPrimary  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interest   Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([userId, interestId])
+  @@index([interestId])
+  @@map("user_universes")
+}
+
+// ============================================================
+// CONTENT: POSTS / FEED
+// ============================================================
+
+enum PostType {
+  UPDATE
+  QUESTION
+  RESOURCE
+  DISCUSSION
+  MILESTONE
+}
+
+enum Visibility {
+  PUBLIC
+  FOLLOWERS
+  INTEREST
+  PRIVATE
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  authorId    String
+  type        PostType   @default(UPDATE)
+  visibility  Visibility @default(PUBLIC)
+  body        String     @db.Text
+  // optional attachments to context objects
+  interestId  String? @map("universeId")
+  projectId   String?
+  communityId String?
+  // resource-type posts carry a link
+  linkUrl     String?
+  // optional public Git repo (GitHub/GitLab/Bitbucket) attached to the post
+  gitRepoUrl  String?
+  isPinned    Boolean    @default(false)
+
+  // denormalized engagement counters
+  reactionsCount Int   @default(0)
+  commentsCount  Int   @default(0)
+  bookmarksCount Int   @default(0)
+  sharesCount    Int   @default(0)
+  // quality/ranking score maintained by the feed ranker (not engagement-maximizing).
+  score          Float @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  interest  Interest?   @relation(fields: [interestId], references: [id], onDelete: SetNull)
+  project   Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  community Community?  @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  media     PostMedia[]
+  comments  Comment[]
+  shares    PostShare[]
+
+  // keyset pagination + interest/author feeds
+  @@index([createdAt, id])
+  @@index([authorId, createdAt])
+  @@index([interestId, createdAt])
+  @@index([communityId, createdAt])
+  @@index([deletedAt])
+  @@map("posts")
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  GIF
+}
+
+model PostMedia {
+  id           String    @id @default(cuid())
+  postId       String
+  type         MediaType @default(IMAGE)
+  url          String
+  thumbnailUrl String? // poster frame / preview (videos, large images)
+  width        Int?
+  height       Int?
+  durationSec  Int? // video length
+  altText      String?
+  sortOrder    Int       @default(0)
+  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("post_media")
+}
+
+// A share event. `target` records the channel; the model is open so new
+// share targets (email, native intents, etc.) can be added without a schema change.
+model PostShare {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  target    String   @default("COPY_LINK")
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId, createdAt])
+  @@map("post_shares")
+}
+
+model Comment {
+  id             String  @id @default(cuid())
+  authorId       String
+  body           String  @db.Text
+  // a comment targets exactly one of these (enforced in service).
+  postId         String?
+  projectId      String?
+  // threading
+  parentId       String?
+  reactionsCount Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  author  User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post    Post?     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  project Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentThread")
+
+  @@index([postId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([parentId])
+  @@map("comments")
+}
+
+// Polymorphic reaction. FK integrity to the target is enforced by the
+// service layer (Prisma cannot FK a polymorphic column). Uniqueness stops
+// double-reacting; the enum caps the target space.
+enum ReactableType {
+  POST
+  PROJECT
+  COMMENT
+}
+
+model Reaction {
+  id         String        @id @default(cuid())
+  userId     String
+  targetType ReactableType
+  targetId   String
+  // "RESPECT" is the primary appreciation; kept as string for future kinds.
+  kind       String        @default("RESPECT")
+  createdAt  DateTime      @default(now())
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId, kind])
+  @@index([targetType, targetId])
+  @@map("reactions")
+}
+
+enum BookmarkableType {
+  POST
+  PROJECT
+  RESOURCE
+  ROADMAP
+}
+
+model Bookmark {
+  id         String           @id @default(cuid())
+  userId     String
+  targetType BookmarkableType
+  targetId   String
+  createdAt  DateTime         @default(now())
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId, createdAt])
+  @@index([targetType, targetId])
+  @@map("bookmarks")
+}
+
+// ============================================================
+// PROJECTS
+// ============================================================
+
+enum ProjectStatus {
+  IDEA
+  BUILDING
+  LIVE
+  PAUSED
+  ARCHIVED
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  ownerId     String
+  slug        String        @unique
+  name        String
+  tagline     String?
+  description String?       @db.Text
+  status      ProjectStatus @default(BUILDING)
+  visibility  Visibility    @default(PUBLIC)
+  coverUrl    String?
+  interestId  String? @map("universeId")
+
+  // GitHub integration
+  repoUrl        String?
+  githubRepoId   String?   @unique
+  githubStars    Int?
+  githubSyncedAt DateTime?
+
+  // collaboration
+  openToCollab Boolean @default(false)
+
+  reactionsCount Int @default(0)
+  commentsCount  Int @default(0)
+  bookmarksCount Int @default(0)
+  followersCount Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  owner        User                 @relation("projectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  interest     Interest?            @relation(fields: [interestId], references: [id], onDelete: SetNull)
+  media        ProjectMedia[]
+  technologies ProjectTechnology[]
+  contributors ProjectContributor[]
+  versions     ProjectVersion[]
+  links        ProjectLink[]
+  posts        Post[] // build-log updates
+  comments     Comment[]
+
+  @@index([ownerId, createdAt])
+  @@index([interestId, createdAt])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("projects")
+}
+
+model Technology {
+  id       String              @id @default(cuid())
+  name     String              @unique @db.Citext
+  slug     String              @unique
+  iconKey  String?
+  projects ProjectTechnology[]
+
+  @@map("technologies")
+}
+
+model ProjectTechnology {
+  projectId String
+  techId    String
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tech      Technology @relation(fields: [techId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, techId])
+  @@index([techId])
+  @@map("project_technologies")
+}
+
+enum ContributorRole {
+  MAINTAINER
+  CONTRIBUTOR
+  DESIGNER
+  RESEARCHER
+  ADVISOR
+}
+
+model ProjectContributor {
+  projectId String
+  userId    String
+  role      ContributorRole @default(CONTRIBUTOR)
+  createdAt DateTime        @default(now())
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_contributors")
+}
+
+model ProjectVersion {
+  id         String   @id @default(cuid())
+  projectId  String
+  version    String // "v0.3.0"
+  changelog  String   @db.Text
+  releasedAt DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+  @@index([projectId, releasedAt])
+  @@map("project_versions")
+}
+
+enum ProjectLinkKind {
+  REPO
+  LIVE
+  DEMO
+  DOCS
+  OTHER
+}
+
+model ProjectMedia {
+  id        String    @id @default(cuid())
+  projectId String
+  type      MediaType @default(IMAGE)
+  url       String
+  altText   String?
+  sortOrder Int       @default(0)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_media")
+}
+
+model ProjectLink {
+  id        String          @id @default(cuid())
+  projectId String
+  kind      ProjectLinkKind @default(OTHER)
+  label     String?
+  url       String
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_links")
+}
+
+// ============================================================
+// COMMUNITIES
+// ============================================================
+
+enum CommunityVisibility {
+  PUBLIC
+  RESTRICTED // discoverable, join requires approval
+  PRIVATE // invite only
+}
+
+enum MembershipRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+model Community {
+  id          String              @id @default(cuid())
+  interestId  String @map("universeId")
+  slug        String              @unique
+  name        String
+  purpose     String?
+  description String?             @db.Text
+  visibility  CommunityVisibility @default(PUBLIC)
+  iconUrl     String?
+  coverUrl    String?
+
+  membersCount Int @default(0)
+  threadsCount Int @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  interest Interest              @relation(fields: [interestId], references: [id], onDelete: Cascade)
+  members  CommunityMembership[]
+  channels CommunityChannel[]
+  threads  Thread[]
+  rules    CommunityRule[]
+  posts    Post[]
+
+  @@index([interestId])
+  @@index([deletedAt])
+  @@map("communities")
+}
+
+model CommunityMembership {
+  communityId String
+  userId      String
+  role        MembershipRole @default(MEMBER)
+  // for RESTRICTED communities
+  approved    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  community   Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([communityId, userId])
+  @@index([userId])
+  @@index([communityId, role])
+  @@map("community_memberships")
+}
+
+model CommunityChannel {
+  id          String    @id @default(cuid())
+  communityId String
+  slug        String
+  name        String
+  description String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  threads     Thread[]
+
+  @@unique([communityId, slug])
+  @@map("community_channels")
+}
+
+model CommunityRule {
+  id          String    @id @default(cuid())
+  communityId String
+  title       String
+  body        String?   @db.Text
+  sortOrder   Int       @default(0)
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+  @@map("community_rules")
+}
+
+model Thread {
+  id             String   @id @default(cuid())
+  communityId    String
+  channelId      String?
+  authorId       String
+  title          String
+  body           String   @db.Text
+  isPinned       Boolean  @default(false)
+  isLocked       Boolean  @default(false)
+  repliesCount   Int      @default(0)
+  reactionsCount Int      @default(0)
+  lastReplyAt    DateTime @default(now())
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  community Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  channel   CommunityChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  author    User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  replies   ThreadReply[]
+
+  @@index([communityId, isPinned, lastReplyAt])
+  @@index([channelId, lastReplyAt])
+  @@index([authorId])
+  @@map("threads")
+}
+
+model ThreadReply {
+  id             String  @id @default(cuid())
+  threadId       String
+  authorId       String
+  body           String  @db.Text
+  parentId       String?
+  reactionsCount Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  thread  Thread        @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author  User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent  ThreadReply?  @relation("ReplyThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ThreadReply[] @relation("ReplyThread")
+
+  @@index([threadId, createdAt])
+  @@index([parentId])
+  @@map("thread_replies")
+}
+
+// ============================================================
+// MESSAGING
+// ============================================================
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+model Conversation {
+  id          String           @id @default(cuid())
+  type        ConversationType @default(DIRECT)
+  title       String? // group only
+  // context: a DM can be opened "about" a project/collab.
+  contextType String?
+  contextId   String?
+  // for DIRECT: deterministic key of sorted participant ids to enforce one convo.
+  directKey   String?          @unique
+
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  conversationId String
+  userId         String
+  // read-receipt cursor (scalable — no per-message-per-user rows).
+  lastReadAt     DateTime?
+  mutedUntil     DateTime?
+  leftAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String  @id @default(cuid())
+  conversationId String
+  senderId       String
+  body           String? @db.Text
+  // reply threading
+  replyToId      String?
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?            @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]           @relation("MessageReply")
+  attachments  MessageAttachment[]
+  reactions    MessageReaction[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        String    @id @default(cuid())
+  messageId String
+  type      MediaType @default(IMAGE)
+  url       String
+  fileName  String?
+  fileSize  Int?
+  mimeType  String?
+  width     Int?
+  height    Int?
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+model MessageReaction {
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
+}
+
+// ============================================================
+// LEARNING
+// ============================================================
+
+enum ResourceKind {
+  ARTICLE
+  VIDEO
+  COURSE
+  PAPER
+  TOOL
+  BOOK
+}
+
+model LearningResource {
+  id             String       @id @default(cuid())
+  interestId     String? @map("universeId")
+  submittedBy    String?
+  kind           ResourceKind @default(ARTICLE)
+  title          String
+  url            String
+  summary        String?      @db.Text
+  source         String? // domain
+  reactionsCount Int          @default(0)
+  bookmarksCount Int          @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  interest Interest? @relation(fields: [interestId], references: [id], onDelete: SetNull)
+
+  @@index([interestId, createdAt])
+  @@index([kind])
+  @@map("learning_resources")
+}
+
+model Roadmap {
+  id          String  @id @default(cuid())
+  interestId  String? @map("universeId")
+  slug        String  @unique
+  title       String
+  description String? @db.Text
+  level       String? // "beginner" | "intermediate" | "advanced"
+  isOfficial  Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  interest Interest?          @relation(fields: [interestId], references: [id], onDelete: SetNull)
+  steps    RoadmapStep[]
+  progress LearningProgress[]
+
+  @@index([interestId])
+  @@map("roadmaps")
+}
+
+model RoadmapStep {
+  id        String  @id @default(cuid())
+  roadmapId String
+  title     String
+  body      String? @db.Text
+  sortOrder Int     @default(0)
+  roadmap   Roadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+
+  @@index([roadmapId, sortOrder])
+  @@map("roadmap_steps")
+}
+
+model LearningProgress {
+  id             String    @id @default(cuid())
+  userId         String
+  roadmapId      String
+  completedSteps String[] // step ids completed
+  percentage     Int       @default(0)
+  startedAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roadmap Roadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roadmapId])
+  @@index([userId])
+  @@map("learning_progress")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+enum NotificationType {
+  FOLLOW
+  REACTION
+  COMMENT
+  REPLY
+  MENTION
+  PROJECT_UPDATE
+  COLLAB_REQUEST
+  COMMUNITY_JOIN
+  COMMUNITY_POST
+  MESSAGE
+  SYSTEM
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  recipientId String
+  actorId     String? // who triggered it (null for SYSTEM)
+  type        NotificationType
+  // grouping key: collapses "5 people respected your post" into one row.
+  groupKey    String?
+  targetType  String? // POST | PROJECT | COMMENT | ...
+  targetId    String?
+  interestId  String? @map("universeId") // for interest-grouped notifications
+  // small payload for rendering without extra joins.
+  data        Json?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("notificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("notificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, readAt, createdAt])
+  @@index([recipientId, groupKey])
+  @@map("notifications")
+}
+
+// ============================================================
+// MODERATION & AUDIT
+// ============================================================
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id         String       @id @default(cuid())
+  reporterId String
+  targetType String
+  targetId   String
+  reason     String
+  details    String?      @db.Text
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+  resolvedAt DateTime?
+  reporter   User         @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+  @@map("reports")
+}
+
+// Immutable audit trail for privileged/security-relevant mutations.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String? // null for system actions
+  action     String // "user.login", "session.revoke", "community.role.change"
+  targetType String?
+  targetId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}

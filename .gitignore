@@ -1,0 +1,40 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# env — NEVER commit secrets
+.env
+.env*.local
+.env.production
+
+# prisma
+/prisma/migrations/dev.db*
+
+# misc
+.DS_Store
+*.pem
+/coverage
+.vscode/*
+!.vscode/extensions.json
+npm-debug.log*
+pnpm-debug.log*
+
+# turbo / caches
+.turbo
+tsconfig.tsbuildinfo
+
+# runtime uploads
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# runtime media storage
+/storage/

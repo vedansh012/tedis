@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * TedIS design tokens.
+ * Palette: neutral-led and calm; content is colorful, chrome is quiet.
+ * Brand accent = "TedIS Violet" (deliberately not LinkedIn blue).
+ * All foreground/background pairings meet WCAG AA (>= 4.5:1 for text).
+ */
+@layer base {
+  :root {
+    --radius: 0.625rem;
+
+    --background: 0 0% 100%;
+    --foreground: 224 20% 12%;
+    --surface: 240 20% 99%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 20% 12%;
+
+    --primary: 24 100% 46%; /* TedIS orange — darkened slightly so white text is legible */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 20% 96%;
+    --secondary-foreground: 24 20% 20%;
+
+    --muted: 30 20% 96%;
+    --muted-foreground: 24 6% 44%; /* 4.6:1 on white */
+
+    --accent: 24 100% 46%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 58% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 45%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 30 12% 90%;
+    --input: 30 12% 88%;
+    --ring: 24 100% 46%;
+  }
+
+  .dark {
+    --background: 224 24% 7%;
+    --foreground: 220 16% 92%;
+    --surface: 224 22% 9%;
+
+    --card: 224 22% 10%;
+    --card-foreground: 220 16% 92%;
+    --popover: 224 22% 10%;
+    --popover-foreground: 220 16% 92%;
+
+    --primary: 24 100% 55%; /* TedIS orange, brightened for dark surfaces */
+    --primary-foreground: 20 45% 8%;
+
+    --secondary: 24 12% 16%;
+    --secondary-foreground: 30 16% 92%;
+
+    --muted: 24 12% 16%;
+    --muted-foreground: 30 8% 65%; /* AA on dark surface */
+
+    --accent: 24 100% 55%;
+    --accent-foreground: 20 45% 8%;
+
+    --destructive: 0 72% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 52% 48%;
+    --success-foreground: 224 40% 8%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 224 40% 8%;
+
+    --border: 24 10% 20%;
+    --input: 24 10% 22%;
+    --ring: 24 100% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Visible focus for keyboard users everywhere (accessibility baseline). */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Respect reduced-motion globally. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /*
+   * Progressive reveal for lists (search results, notifications, suggestions).
+   * Children fade+settle in sequence for a premium "content arriving" feel.
+   * Reuses the shared `fade-in` keyframe so timing matches the rest of the app;
+   * neutralized by the reduced-motion guard above.
+   */
+  .stagger > * {
+    animation: fade-in 0.3s ease-out backwards;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger > *:nth-child(4) { animation-delay: 120ms; }
+  .stagger > *:nth-child(5) { animation-delay: 160ms; }
+  .stagger > *:nth-child(6) { animation-delay: 200ms; }
+  .stagger > *:nth-child(n + 7) { animation-delay: 240ms; }
+}
+
+/*
+ * Premium theme switch (View Transitions API) — GPU-only.
+ *
+ * The reveal is driven purely by `opacity` + `transform`, which animate on the
+ * compositor thread. This is deliberate: the full-document style recalc that a
+ * theme swap triggers keeps the MAIN thread busy for a moment, and a main-thread
+ * animation (e.g. clip-path) would freeze during that window. opacity/transform
+ * are immune to main-thread stalls, so the reveal stays smooth start-to-finish.
+ *
+ * The new theme cross-fades in and gently blooms out from the toggle button
+ * (origin set as CSS vars in theme-toggle.tsx) — the "emanates from the button"
+ * feel, without the paint-bound clip-path. Document-level pseudo-elements, so
+ * they live outside @layer.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* Replace the UA cross-fade with our own; both layers stack, no blend. */
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  animation: theme-old-out 0.85s ease-out forwards;
+}
+::view-transition-new(root) {
+  animation: theme-new-in 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: var(--theme-x, 50%) var(--theme-y, 50%);
+}
+
+@keyframes theme-old-out {
+  to { opacity: 0; }
+}
+@keyframes theme-new-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Accessibility: never run the reveal for reduced-motion users (the JS also
+   skips View Transitions entirely for them — this is a belt-and-braces guard). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}

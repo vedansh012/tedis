@@ -101,6 +101,29 @@ async function main() {
     await prisma.skill.upsert({ where: { slug }, update: {}, create: { name, slug } });
   }
 
+  /*
+   * Everything above is reference data the product needs to function at all
+   * (interests are its spine) and is safe to run anywhere. Everything below is
+   * demo content — three accounts sharing one published password, plus their
+   * posts and projects. That must never exist in production, so it is opt-in:
+   *
+   *   pnpm db:seed                 -> reference data only  (production-safe)
+   *   SEED_DEMO=1 pnpm db:seed     -> also create the demo graph (local only)
+   *
+   * NODE_ENV alone isn't the gate: running a seed from a laptop against a
+   * production database is exactly how demo accounts leak into production.
+   */
+  if (process.env.SEED_DEMO !== "1") {
+    const [iCount, tCount, sCount] = await Promise.all([
+      prisma.interest.count(),
+      prisma.technology.count(),
+      prisma.skill.count(),
+    ]);
+    console.log(`\nReference data seeded: ${iCount} interests, ${tCount} technologies, ${sCount} skills.`);
+    console.log("Demo users/posts skipped. Re-run with SEED_DEMO=1 to include them (local only).");
+    return;
+  }
+
   const interests = await prisma.interest.findMany();
   const bySlug = (s: string) => interests.find((u) => u.slug === s)!;
 

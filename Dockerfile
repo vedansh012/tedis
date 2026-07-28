@@ -26,6 +26,33 @@ RUN corepack enable
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# `next build` executes route modules to collect page data, and those import
+# src/config/env.ts, which validates the environment at import time. A build
+# machine has none of these values, so without placeholders the build fails
+# with "Invalid environment variables" before it ever produces an image.
+#
+# These are BUILD-TIME ONLY. They live in the builder stage, which is discarded
+# — the runner below is a separate FROM and inherits none of them. Real values
+# are injected by the platform at runtime. They only need to satisfy the
+# schema's shape: parseable URLs and >=32-character secrets.
+#
+# APP_URL is an ARG so the platform can pass the real origin: it is embedded in
+# `metadataBase` for statically rendered pages (OG/canonical tags). Anything
+# else that must reflect the real origin at request time — sitemap, robots — is
+# marked `force-dynamic` instead of relying on this.
+ARG APP_URL=http://localhost:3000
+ENV APP_URL=$APP_URL \
+    APP_NAME=TedIS \
+    DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build \
+    DIRECT_DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build \
+    REDIS_URL=redis://127.0.0.1:6379 \
+    SESSION_SECRET=build_time_placeholder_not_a_real_secret_0123456789 \
+    CSRF_SECRET=build_time_placeholder_not_a_real_secret_0123456789 \
+    WEBAUTHN_RP_ID=localhost \
+    WEBAUTHN_RP_NAME=TedIS \
+    WEBAUTHN_ORIGIN=http://localhost:3000
+
 # `pnpm build` == `prisma generate && next build`
 RUN pnpm build
 

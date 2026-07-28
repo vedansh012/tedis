@@ -1,5 +1,10 @@
 import type { MetadataRoute } from "next";
 
+// Per-request for the same reason as the sitemap: APP_URL is a placeholder at
+// build time, so a statically generated robots.txt would point crawlers at
+// localhost.
+export const dynamic = "force-dynamic";
+
 const BASE = process.env.APP_URL ?? "http://localhost:3000";
 
 export default function robots(): MetadataRoute.Robots {

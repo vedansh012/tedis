@@ -1,6 +1,18 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/server/db/prisma";
 
+/*
+ * Rendered per request, not at build time. Two reasons, both of which produced
+ * a wrong sitemap when this was static:
+ *  - it queries the database, and the build machine has no production data
+ *    (on a container host it has no database at all);
+ *  - it embeds APP_URL, which at build time is a placeholder — the deployed
+ *    sitemap would have advertised localhost URLs to crawlers.
+ */
+export const dynamic = "force-dynamic";
+
+// Safe as a module const because `force-dynamic` means this module is only
+// evaluated in the running server, where APP_URL holds the real origin.
 const BASE = process.env.APP_URL ?? "http://localhost:3000";
 
 /**

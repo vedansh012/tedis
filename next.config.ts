@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -6,6 +7,16 @@ const nextConfig: NextConfig = {
   // Lean production image: emits .next/standalone with a minimal server + only
   // the traced node_modules. See Dockerfile.
   output: "standalone",
+  /*
+   * Pin the file-tracing root to this project.
+   *
+   * Next infers the root by walking up for a lockfile, and an unrelated
+   * pnpm-lock.yaml further up the tree (a stray one in $HOME, or a parent
+   * workspace) wins that search. It then traces `output: "standalone"` against
+   * the wrong directory, which silently produces an image missing runtime
+   * dependencies — a failure that only shows up on boot in the container.
+   */
+  outputFileTracingRoot: path.join(__dirname),
   // Prisma & other server-only packages must not be bundled into RSC output.
   serverExternalPackages: ["@prisma/client", "argon2", "ioredis", "bullmq", "sharp", "@aws-sdk/client-s3"],
   experimental: {

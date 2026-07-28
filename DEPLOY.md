@@ -55,9 +55,27 @@ migrations from a context that has dev deps (CI job, or the builder image):
 pnpm prisma migrate deploy      # applies pending migrations, idempotent
 ```
 
-- **Railway / Render:** set this as the **release/pre-deploy command**.
-- **Fly.io:** `[deploy] release_command = "pnpm prisma migrate deploy"`.
-- **Raw Docker:** `docker run --env-file .env.production --entrypoint sh tedis-migrate -c "pnpm prisma migrate deploy"` using an image that includes dev deps, or run it from CI against the prod DB.
+> **Do not set this as Railway's pre-deploy command.** The runner stage copies
+> only `.next/standalone` + `.next/static`, so it has no pnpm, no Prisma CLI,
+> and no `prisma/` directory — the command would fail on every deploy.
+
+Run it from a machine that has the repo, pointing at the production database.
+Use the **direct** (non-pooled) URL: PgBouncer's transaction mode drops the
+advisory locks `migrate deploy` needs.
+
+```bash
+DATABASE_URL='<pooled>' \
+DIRECT_DATABASE_URL='<direct, no -pooler>' \
+pnpm prisma migrate deploy
+```
+
+Apply migrations **before** deploying code that depends on them — an old image
+against a new schema is safe, the reverse is not.
+
+- **Fly.io:** `[deploy] release_command = "pnpm prisma migrate deploy"` works
+  there because Fly runs it in a machine built from the full image.
+- **CI:** the most robust option — a job with dev deps, gated on the same
+  secrets, run before the deploy step.
 
 ## 4. Database — connection pooling (required at scale)
 

@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
    */
   outputFileTracingRoot: path.join(__dirname),
   // Prisma & other server-only packages must not be bundled into RSC output.
-  serverExternalPackages: ["@prisma/client", "argon2", "ioredis", "bullmq", "sharp", "@aws-sdk/client-s3"],
+  serverExternalPackages: ["@prisma/client", "argon2", "ioredis", "sharp", "@aws-sdk/client-s3"],
   experimental: {
     // Re-enabled in Increment 2 once /login, /signup, /explore exist. Enabling
     // it now would force fake placeholder routes just to satisfy the type check,

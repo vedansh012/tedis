@@ -3,8 +3,9 @@
  * the actual tRPC caller (so CSRF, rate limiting, cookie issuance, and every
  * service run exactly as in production). Run: pnpm tsx scripts/e2e-auth.ts
  *
- * Covers the frictionless flow: instant signup with auto-login, unique
- * email/username, no email verification. Exits non-zero on any failed assertion.
+ * Covers signup with mandatory email verification (accounts are inert until the
+ * emailed link is consumed), login gating, unique email/username, CSRF, lockout,
+ * and password reset. Exits non-zero on any failed assertion.
  */
 import { createCaller } from "@/server/trpc/root";
 import type { TRPCContext } from "@/server/trpc/context";
@@ -106,10 +107,13 @@ async function main() {
   };
   const USERS = { happy: "e2ehappy", lock: "e2elock", reset: "e2ereset" };
   await cleanup(Object.values(EMAILS), Object.values(USERS));
-  const rlKeys = await redis.keys("rl:*e2e*");
+  // Clear both the account-scoped counters (…e2e…) and the IP-scoped ones for
+  // the 203.0.113.x test range — the register limit is 5/hour per IP and this
+  // suite intentionally makes more than five attempts from one address.
+  const rlKeys = [...(await redis.keys("rl:*e2e*")), ...(await redis.keys("rl:*203.0.113.*"))];
   if (rlKeys.length) await redis.del(...rlKeys);
 
-  console.log("\n▶ 1. Instant signup auto-logs-in, no verification, unique email+username");
+  console.log("\n▶ 1. Signup requires email verification, unique email+username");
   let happySession = "";
   {
     const sink = new Headers();
@@ -119,15 +123,20 @@ async function main() {
       email: EMAILS.happy,
       password: PW,
     });
-    assert("status" in res && res.status === "SUCCESS", "register returns SUCCESS (auto-login)");
-    happySession = sessionFromSink(sink) ?? "";
-    assert(happySession.includes("."), "signup sets a session cookie (auto-login)");
+    assert("status" in res && res.status === "VERIFICATION_SENT", "register returns VERIFICATION_SENT");
+    assert(!sessionFromSink(sink), "signup does NOT set a session cookie");
 
     const user = await prisma.user.findUnique({ where: { email: EMAILS.happy } });
     assert(!!user, "user row created");
-    assert(user?.emailVerified !== null, "account active immediately (no verification gate)");
+    assert(user?.emailVerified === null, "account starts UNVERIFIED (gate active)");
     assert(user?.username === USERS.happy, "chosen username persisted");
     assert(user?.onboardedAt === null, "onboarding still pending (feature preserved)");
+
+    // A verification token must have been issued for this user.
+    const pending = await prisma.verificationToken.count({
+      where: { userId: user!.id, type: "EMAIL_VERIFICATION", consumedAt: null },
+    });
+    assert(pending === 1, "verification token issued on signup");
 
     // Duplicate email is rejected.
     await expectThrow(
@@ -145,19 +154,52 @@ async function main() {
     assert(count === 1, "no duplicate account created");
   }
 
-  console.log("\n▶ 2. The signup session is valid immediately");
+  console.log("\n▶ 2. Login is blocked until the email is verified");
   {
+    // Correct password, but unverified → no session issued.
     const sink = new Headers();
-    const ctx = await authedContext(happySession, sink);
-    const me = await createCaller(ctx).auth.me();
-    assert(me?.email === EMAILS.happy, "auth.me works right after signup");
+    const blocked = await caller(sink, "203.0.113.2").auth.login({ email: EMAILS.happy, password: PW });
+    assert("status" in blocked && blocked.status === "UNVERIFIED", "unverified login returns UNVERIFIED");
+    assert(!sessionFromSink(sink), "no session cookie issued while unverified");
+
+    // A wrong password on an unverified account must still look like a normal
+    // credential failure — otherwise this endpoint enumerates registered emails.
+    const wrong = await caller(new Headers(), "203.0.113.2").auth.login({
+      email: EMAILS.happy,
+      password: "TotallyWrong999",
+    });
+    assert(
+      "status" in wrong && wrong.status === "INVALID_CREDENTIALS",
+      "wrong password on unverified account does not leak UNVERIFIED",
+    );
+
+    // Bad token is rejected.
+    const bad = await caller(new Headers(), "203.0.113.2").auth.verifyEmail({ token: "not-a-real-token" });
+    assert("status" in bad && bad.status === "INVALID_OR_EXPIRED", "invalid verification token rejected");
+
+    // Verify for real.
+    const userId = (await prisma.user.findUniqueOrThrow({ where: { email: EMAILS.happy }, select: { id: true } })).id;
+    const rawVerify = await issueToken(userId, "EMAIL_VERIFICATION", EMAILS.happy);
+    const okRes = await caller(new Headers(), "203.0.113.2").auth.verifyEmail({ token: rawVerify });
+    assert("status" in okRes && okRes.status === "SUCCESS", "valid verification token accepted");
+
+    const verified = await prisma.user.findUnique({ where: { email: EMAILS.happy } });
+    assert(verified?.emailVerified !== null, "emailVerified set after verification");
+
+    // Single-use: replaying the same link must fail.
+    const replay = await caller(new Headers(), "203.0.113.2").auth.verifyEmail({ token: rawVerify });
+    assert("status" in replay && replay.status === "INVALID_OR_EXPIRED", "verification token is single-use");
   }
 
-  console.log("\n▶ 3. Login + logout");
+  console.log("\n▶ 3. Login + logout (now verified)");
   {
     const sink = new Headers();
     const res = await caller(sink, "203.0.113.2").auth.login({ email: EMAILS.happy, password: PW });
-    assert("status" in res && res.status === "SUCCESS", "login returns SUCCESS");
+    assert("status" in res && res.status === "SUCCESS", "login returns SUCCESS after verification");
+    happySession = sessionFromSink(sink) ?? "";
+    const meCtx = await authedContext(happySession, new Headers());
+    const me = await createCaller(meCtx).auth.me();
+    assert(me?.email === EMAILS.happy, "auth.me works once verified");
     const token = sessionFromSink(sink) ?? "";
     assert((await validateSessionToken(token)) !== null, "login session validates");
 
@@ -211,10 +253,17 @@ async function main() {
       { ipAddress: "203.0.113.7" },
     );
     assert(reg.ok, "reset-user registered");
-    const oldSession = reg.ok ? reg.value.sessionToken : "";
-    assert((await validateSessionToken(oldSession)) !== null, "pre-reset session valid");
 
     const userId = (await prisma.user.findUniqueOrThrow({ where: { email: EMAILS.reset }, select: { id: true } })).id;
+
+    // Registration no longer returns a session, so establish one the supported
+    // way: verify the address, then log in — that is what we expect the reset to
+    // revoke below.
+    await authService.verifyEmail(await issueToken(userId, "EMAIL_VERIFICATION", EMAILS.reset), {});
+    const loginSink = new Headers();
+    await caller(loginSink, "203.0.113.7").auth.login({ email: EMAILS.reset, password: "OldPass123" });
+    const oldSession = sessionFromSink(loginSink) ?? "";
+    assert((await validateSessionToken(oldSession)) !== null, "pre-reset session valid");
     const rawReset = await issueToken(userId, "PASSWORD_RESET", EMAILS.reset);
     await caller(new Headers(), "203.0.113.7").auth.resetPassword({ token: rawReset, password: "BrandNew456" });
 

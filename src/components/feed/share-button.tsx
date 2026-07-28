@@ -61,7 +61,7 @@ export function ShareButton({ postId, initialCount }: { postId: string; initialC
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
+        className="flex min-h-touch min-w-touch items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary"
       >
         <Share2 size={18} />
         {count > 0 && <span className="tabular-nums">{count}</span>}

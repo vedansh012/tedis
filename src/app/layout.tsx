@@ -52,6 +52,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Lets the page paint into the notch/Dynamic Island area; the shell then pays
+  // that back with env(safe-area-inset-*) padding so nothing lands under the
+  // system UI. Without this, the insets always resolve to 0.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

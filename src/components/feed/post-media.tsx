@@ -1,9 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { Lightbox } from "./lightbox";
+
+/**
+ * The lightbox is only reachable by tapping a gallery image, so it is split out
+ * of the feed bundle — every feed render pays for it otherwise. `ssr: false` is
+ * safe here because it never renders on first paint.
+ */
+const Lightbox = dynamic(() => import("./lightbox").then((m) => m.Lightbox), { ssr: false });
 
 export interface MediaItem {
   id: string;

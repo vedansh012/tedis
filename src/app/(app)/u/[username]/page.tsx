@@ -33,18 +33,24 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <header>
-        <div className="flex items-start gap-4">
+        {/*
+          Wraps to a second row on very narrow screens (<=360px) instead of
+          pushing the actions off-screen. `min-w-0` lets the name column shrink
+          — without it the flex item refuses to go below its content width and
+          overflows the viewport.
+        */}
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
           <Avatar src={p.profile?.avatarUrl} name={p.displayName} size={80} />
-          <div className="flex-1 pt-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{p.displayName}</h1>
-            <p className="text-sm text-muted-foreground">@{p.username}</p>
+          <div className="min-w-0 flex-1 pt-1">
+            <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{p.displayName}</h1>
+            <p className="truncate text-sm text-muted-foreground">@{p.username}</p>
           </div>
           {p.isSelf ? (
-            <Link href="/settings">
+            <Link href="/settings" className="shrink-0">
               <Button variant="outline" size="sm">Edit profile</Button>
             </Link>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <FollowButton userId={p.id} initialFollowing={p.isFollowing} size="sm" />
               <MessageButton userId={p.id} />
               <ProfileActions userId={p.id} username={p.username} />

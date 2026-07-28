@@ -19,6 +19,12 @@ const config: Config = {
       screens: { "2xl": "1280px" },
     },
     extend: {
+      // Desktop content tier (feed pinned at 820px, labeled sidebar 260px).
+      // Sits between the default xl(1280) and 2xl(1536) so it doesn't
+      // redefine either — 'extend' merges alongside them, not over them.
+      screens: {
+        wide: "1440px",
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -67,6 +73,27 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      /*
+       * Device safe areas (iPhone notch / Dynamic Island / home indicator,
+       * Android gesture bar). Requires viewportFit:"cover" in app/layout.tsx,
+       * otherwise these all resolve to 0 — which is also the correct fallback
+       * on every non-notched device and older browser.
+       */
+      spacing: {
+        "safe-t": "env(safe-area-inset-top)",
+        "safe-b": "env(safe-area-inset-bottom)",
+        "safe-l": "env(safe-area-inset-left)",
+        "safe-r": "env(safe-area-inset-right)",
+        // Bottom nav height + the home-indicator inset, for main-content padding.
+        "nav-b": "calc(4rem + env(safe-area-inset-bottom))",
+      },
+      minHeight: {
+        // WCAG 2.5.5 / Apple HIG minimum comfortable touch target.
+        touch: "44px",
+      },
+      minWidth: {
+        touch: "44px",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

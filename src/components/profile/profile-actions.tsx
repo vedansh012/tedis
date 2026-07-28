@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { MoreHorizontal, Flag, Ban, UserCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { ReportDialog } from "@/components/moderation/report-dialog";
+import dynamic from "next/dynamic";
+
+// Interaction-gated: only loads once the user opens the profile overflow menu.
+const ReportDialog = dynamic(
+  () => import("@/components/moderation/report-dialog").then((m) => m.ReportDialog),
+  { ssr: false },
+);
 
 /** Overflow menu on someone else's profile: block/unblock + report. */
 export function ProfileActions({ userId, username }: { userId: string; username: string }) {

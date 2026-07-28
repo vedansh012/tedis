@@ -84,7 +84,13 @@ function Messenger() {
   const list = conversations.data ?? [];
 
   return (
-    <div className="flex h-[calc(100dvh-8rem)] overflow-hidden rounded-xl border border-border bg-card md:h-[calc(100dvh-6rem)]">
+    /*
+      Height must discount the app chrome *and* the device insets, or the chat
+      composer ends up under the bottom nav / home indicator on notched phones.
+      Mobile chrome ≈ top bar + page padding + bottom nav; desktop has neither
+      bar, so it only subtracts its own page padding.
+    */
+    <div className="flex h-[calc(100dvh-9.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-hidden rounded-xl border border-border bg-card md:h-[calc(100dvh-6rem)]">
       {/* Conversation list */}
       <aside className={cn("w-full shrink-0 overflow-y-auto border-r border-border md:w-80", selected && "hidden md:block")}>
         <header className="sticky top-0 z-10 border-b border-border bg-card/90 px-4 py-3 backdrop-blur">

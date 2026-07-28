@@ -54,9 +54,13 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
   }
 
   return (
-    <article className="rounded-xl border border-border bg-card p-4 transition-colors">
+    <article className="rounded-xl border border-border bg-card p-4 transition-colors md:p-5">
       <header className="flex items-start gap-3">
-        <Link href={`/u/${post.author.username}`}>
+        <Link
+          href={`/u/${post.author.username}`}
+          aria-label={`${post.author.displayName}'s profile`}
+          className="shrink-0"
+        >
           <Avatar src={post.author.profile?.avatarUrl} name={post.author.displayName} size={40} />
         </Link>
         <div className="min-w-0 flex-1">
@@ -87,7 +91,8 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
         <PostMenu postId={post.id} authorLabel={`@${post.author.username}`} />
       </header>
 
-      {post.body && <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed">{post.body}</div>}
+      {/* leading bumps slightly on the wider desktop column — longer lines need a touch more line-height to stay easy to scan. */}
+      {post.body && <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed md:leading-[1.7]">{post.body}</div>}
 
       {post.linkUrl && (
         <a
@@ -112,7 +117,7 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
           onClick={onReact}
           aria-pressed={reacted}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary",
+            "flex min-h-touch min-w-touch items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary",
             reacted && "text-primary",
           )}
         >
@@ -124,7 +129,7 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
         </button>
         <Link
           href={`/posts/${post.id}`}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary"
+          className="flex min-h-touch min-w-touch items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary"
         >
           <MessageCircle size={18} />
           <span className="tabular-nums">{post.commentsCount}</span>
@@ -135,7 +140,7 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
           onClick={onBookmark}
           aria-pressed={bookmarked}
           className={cn(
-            "ml-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary",
+            "ml-auto flex min-h-touch min-w-touch items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-secondary",
             bookmarked && "text-primary",
           )}
         >

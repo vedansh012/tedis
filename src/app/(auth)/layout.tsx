@@ -10,7 +10,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         className="pointer-events-none absolute inset-x-0 -top-32 h-96 bg-[radial-gradient(50%_50%_at_50%_0%,hsl(var(--primary)/0.14),transparent_70%)]"
       />
       <header className="mx-auto w-full max-w-md px-6 py-6">
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+        <Link href="/" className="flex min-h-touch items-center gap-2 text-lg font-semibold tracking-tight">
           <TedisMark size={30} priority />
           TedIS
         </Link>

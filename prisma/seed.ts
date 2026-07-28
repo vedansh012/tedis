@@ -10,19 +10,64 @@ import { hashPassword } from "../src/server/services/auth/password";
 
 const prisma = new PrismaClient();
 
+// ~45 broad, community-sized interest categories. Existing slugs (ai, cybersecurity,
+// cloud, robotics, design, finance, gaming, entrepreneurship, photography, health,
+// education, science) are preserved so seeded projects/communities still resolve.
+// The first FEATURED_COUNT are surfaced first on Explore.
+const FEATURED_COUNT = 8;
 const INTERESTS = [
-  { slug: "ai", name: "AI", tagline: "Models, agents, and everything intelligent.", accentColor: "#7c5cff", iconKey: "sparkles" },
+  // — featured / most popular —
+  { slug: "ai", name: "Artificial Intelligence", tagline: "Models, agents, and everything intelligent.", accentColor: "#7c5cff", iconKey: "brain" },
+  { slug: "machine-learning", name: "Machine Learning", tagline: "Training, tuning, and shipping models.", accentColor: "#8b5cf6", iconKey: "binary" },
+  { slug: "web-development", name: "Web Development", tagline: "Frontends, backends, and the full stack.", accentColor: "#0ea5e9", iconKey: "code-xml" },
+  { slug: "programming", name: "Programming", tagline: "Languages, craft, and clean code.", accentColor: "#475569", iconKey: "terminal" },
+  { slug: "data-science", name: "Data Science", tagline: "Data, analysis, and insight.", accentColor: "#06b6d4", iconKey: "line-chart" },
   { slug: "cybersecurity", name: "Cybersecurity", tagline: "Offense, defense, and everything in between.", accentColor: "#ef4444", iconKey: "shield" },
-  { slug: "cloud", name: "Cloud", tagline: "Infra, platforms, and scale.", accentColor: "#0ea5e9", iconKey: "cloud" },
+  { slug: "cloud", name: "Cloud Computing", tagline: "Infra, platforms, and scale.", accentColor: "#38bdf8", iconKey: "cloud" },
+  { slug: "devops", name: "DevOps", tagline: "CI/CD, reliability, and automation.", accentColor: "#2563eb", iconKey: "infinity" },
+  // — engineering & CS —
+  { slug: "mobile-development", name: "Mobile Development", tagline: "iOS, Android, and cross-platform apps.", accentColor: "#0d9488", iconKey: "smartphone" },
+  { slug: "system-design", name: "System Design", tagline: "Architecture, scale, and trade-offs.", accentColor: "#0891b2", iconKey: "network" },
+  { slug: "open-source", name: "Open Source", tagline: "Contributing, maintaining, and community.", accentColor: "#16a34a", iconKey: "git-fork" },
+  { slug: "competitive-programming", name: "Competitive Programming", tagline: "Algorithms, contests, and problem-solving.", accentColor: "#f59e0b", iconKey: "trophy" },
+  { slug: "game-development", name: "Game Development", tagline: "Engines, mechanics, and worlds.", accentColor: "#a855f7", iconKey: "joystick" },
+  { slug: "gaming", name: "Gaming", tagline: "Play, culture, and communities.", accentColor: "#9333ea", iconKey: "gamepad-2" },
+  { slug: "blockchain", name: "Blockchain", tagline: "Chains, contracts, and decentralization.", accentColor: "#f97316", iconKey: "blocks" },
+  { slug: "iot", name: "IoT", tagline: "Connected devices and the physical web.", accentColor: "#22d3ee", iconKey: "radio-tower" },
   { slug: "robotics", name: "Robotics", tagline: "Where bits meet the physical world.", accentColor: "#14b8a6", iconKey: "bot" },
-  { slug: "design", name: "Design", tagline: "Craft, systems, and delightful interfaces.", accentColor: "#ec4899", iconKey: "palette" },
-  { slug: "finance", name: "Finance", tagline: "Markets, fintech, and quant.", accentColor: "#22c55e", iconKey: "trending-up" },
-  { slug: "gaming", name: "Gaming", tagline: "Engines, worlds, and play.", accentColor: "#a855f7", iconKey: "gamepad-2" },
-  { slug: "entrepreneurship", name: "Entrepreneurship", tagline: "Building companies from zero.", accentColor: "#f59e0b", iconKey: "rocket" },
+  // — design —
+  { slug: "ui-ux-design", name: "UI/UX Design", tagline: "Interfaces, flows, and usability.", accentColor: "#ec4899", iconKey: "app-window" },
+  { slug: "product-design", name: "Product Design", tagline: "From problem to polished product.", accentColor: "#db2777", iconKey: "pen-tool" },
+  { slug: "design", name: "Graphic Design", tagline: "Type, brand, and visual craft.", accentColor: "#f472b6", iconKey: "palette" },
+  { slug: "video-editing", name: "Video Editing", tagline: "Cuts, motion, and storytelling.", accentColor: "#c026d3", iconKey: "clapperboard" },
   { slug: "photography", name: "Photography", tagline: "Light, composition, and story.", accentColor: "#64748b", iconKey: "camera" },
-  { slug: "health", name: "Health", tagline: "Bio, medicine, and human performance.", accentColor: "#f43f5e", iconKey: "heart-pulse" },
-  { slug: "education", name: "Education", tagline: "Learning, teaching, and edtech.", accentColor: "#3b82f6", iconKey: "graduation-cap" },
-  { slug: "science", name: "Science", tagline: "Research across every frontier.", accentColor: "#06b6d4", iconKey: "atom" },
+  // — core engineering disciplines —
+  { slug: "electronics", name: "Electronics", tagline: "Circuits, signals, and hardware.", accentColor: "#eab308", iconKey: "circuit-board" },
+  { slug: "embedded-systems", name: "Embedded Systems", tagline: "Firmware and bare-metal.", accentColor: "#ca8a04", iconKey: "cpu" },
+  { slug: "vlsi", name: "VLSI", tagline: "Chip design and semiconductors.", accentColor: "#a16207", iconKey: "component" },
+  { slug: "electrical-engineering", name: "Electrical Engineering", tagline: "Power, systems, and signals.", accentColor: "#f59e0b", iconKey: "zap" },
+  { slug: "mechanical-engineering", name: "Mechanical Engineering", tagline: "Machines, motion, and materials.", accentColor: "#78716c", iconKey: "cog" },
+  { slug: "civil-engineering", name: "Civil Engineering", tagline: "Structures and the built world.", accentColor: "#d97706", iconKey: "hard-hat" },
+  { slug: "chemical-engineering", name: "Chemical Engineering", tagline: "Processes, reactions, and materials.", accentColor: "#10b981", iconKey: "flask-conical" },
+  { slug: "aerospace", name: "Aerospace", tagline: "Flight, propulsion, and space.", accentColor: "#3b82f6", iconKey: "plane" },
+  { slug: "biomedical-engineering", name: "Biomedical Engineering", tagline: "Where biology meets engineering.", accentColor: "#f43f5e", iconKey: "dna" },
+  // — science & research —
+  { slug: "research", name: "Research", tagline: "Papers, labs, and discovery.", accentColor: "#0ea5e9", iconKey: "microscope" },
+  { slug: "science", name: "Science", tagline: "Across every frontier.", accentColor: "#06b6d4", iconKey: "atom" },
+  { slug: "health", name: "Health", tagline: "Bio, medicine, and human performance.", accentColor: "#e11d48", iconKey: "heart-pulse" },
+  { slug: "education", name: "Education", tagline: "Learning, teaching, and edtech.", accentColor: "#2563eb", iconKey: "graduation-cap" },
+  // — work, business & growth —
+  { slug: "startups", name: "Startups", tagline: "Zero to one, in the open.", accentColor: "#fb923c", iconKey: "rocket" },
+  { slug: "entrepreneurship", name: "Entrepreneurship", tagline: "Building companies from scratch.", accentColor: "#eab308", iconKey: "lightbulb" },
+  { slug: "product-management", name: "Product Management", tagline: "Discovery, roadmaps, and shipping.", accentColor: "#6366f1", iconKey: "clipboard-list" },
+  { slug: "finance", name: "Finance", tagline: "Markets, fintech, and quant.", accentColor: "#22c55e", iconKey: "trending-up" },
+  { slug: "freelancing", name: "Freelancing", tagline: "Clients, craft, and independence.", accentColor: "#0d9488", iconKey: "laptop" },
+  { slug: "career", name: "Career & Placements", tagline: "Jobs, growth, and getting hired.", accentColor: "#0284c7", iconKey: "briefcase" },
+  { slug: "interview-prep", name: "Interview Preparation", tagline: "DSA, system design, and mock rounds.", accentColor: "#8b5cf6", iconKey: "clipboard-check" },
+  // — community & meta —
+  { slug: "hackathons", name: "Hackathons", tagline: "Build fast, ship, and win.", accentColor: "#ef4444", iconKey: "code" },
+  { slug: "project-showcase", name: "Project Showcase", tagline: "Show what you've built.", accentColor: "#f97316", iconKey: "folder-git-2" },
+  { slug: "tech-news", name: "Tech News", tagline: "What's happening across tech.", accentColor: "#64748b", iconKey: "newspaper" },
 ];
 
 const TECHNOLOGIES = [
@@ -41,8 +86,8 @@ async function main() {
     const u = INTERESTS[i]!;
     await prisma.interest.upsert({
       where: { slug: u.slug },
-      update: { name: u.name, tagline: u.tagline, accentColor: u.accentColor, iconKey: u.iconKey, sortOrder: i, isFeatured: i < 6 },
-      create: { ...u, sortOrder: i, isFeatured: i < 6 },
+      update: { name: u.name, tagline: u.tagline, accentColor: u.accentColor, iconKey: u.iconKey, sortOrder: i, isFeatured: i < FEATURED_COUNT },
+      create: { ...u, sortOrder: i, isFeatured: i < FEATURED_COUNT },
     });
   }
 

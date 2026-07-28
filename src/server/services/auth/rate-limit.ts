@@ -68,4 +68,10 @@ export const RateLimits = {
   loginPerIp: { limit: 30, windowMs: 5 * 60_000 },
   register: { limit: 5, windowMs: 60 * 60_000 }, // 5 / hour per IP
   passwordResetRequest: { limit: 3, windowMs: 60 * 60_000 },
+  // Token guessing is infeasible (32 random bytes), so this only needs to stop
+  // brute-force noise rather than a realistic search.
+  verifyEmail: { limit: 20, windowMs: 60 * 60_000 },
+  // Tight: each attempt sends a real email, so this caps both spam-to-inbox and
+  // provider cost.
+  resendVerification: { limit: 3, windowMs: 60 * 60_000 },
 } as const;

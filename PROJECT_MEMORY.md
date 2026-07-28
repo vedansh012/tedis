@@ -28,7 +28,8 @@ Format: Status · files · APIs (tRPC unless noted) · tables.
 - **Posts UI** — Complete · `components/feed/*` (post-card, post-media, post-menu, composer, lightbox, share-button, comment-section). Like/save "pop" animation, image fade-in, kebab menu (copy link/report).
 - **Projects** — Complete · `services/project/project.service.ts`, `routers/project.ts`, `(app)/projects/[slug]`, `components/project/project-card.tsx` · `project.list/trending/byUser/mine/bySlug/timeline/create` · projects (+media/technologies/contributors/versions/links). A project = chronological timeline of attached posts (dated, connected, "Where it started"/"Latest"). Owner can compose in-project (locked Composer). NO progress bars / mgmt-tool visuals (intentionally removed).
 - **Git repo attach** — Complete · `features/feed/git-repo.ts` (parse/validate GitHub/GitLab/Bitbucket HTTPS) · `Post.gitRepoUrl`. Card on post + composer field. Unit-tested.
-- **Interests** — Complete. Renamed from "Universe" in code; DB tables still `@@map("universes")`/`user_universes` (no data migration). `routers/interest.ts`, `services/interest`, `(app)/interest/[slug]`.
+- **Interests** — Complete. Renamed from "Universe" in code; DB tables still `@@map("universes")`/`user_universes` (no data migration). `routers/interest.ts`, `services/interest`, `(app)/interest/[slug]`. ~45 broad seeded categories. **Fully DB-driven**: new interests appear on Explore with zero frontend change. Icons via `components/interest-icon.tsx` — a registry of 66 lucide keys PLUS emoji (any emoji in `iconKey` renders directly), so admin-added interests never need code.
+- **Interest suggestions & rewards** — Complete · `services/interest/interest-request.service.ts`, `features/interest/{schema,constants}.ts`, `components/interest/{suggest-interest-dialog,icon-picker}.tsx`, `app/admin/interests/page.tsx` · `interest.suggest/myContribution`, `admin.interestRequests/interestRequestCount/rejectInterestRequest/mergeInterestRequest/publishInterest/interests/createInterest/updateInterest/deleteInterest` · **new table `interest_requests`** (`InterestRequestStatus PENDING|APPROVED|REJECTED|MERGED`) + **`User.rewardPoints`**. Users suggest an interest (name/description/why) from Explore → admin queue (Requests tab) → Approve&Publish (icon picker + emoji, accent, slug, feature toggle, merge duplicates) creates the Interest, awards +50 pts (`INTEREST_REWARD_POINTS`) to every distinct requester, sends a SYSTEM thank-you notification. Manage tab = create/edit/feature/soft-delete existing interests. Publish/create/delete gated at ADMIN+ (`assertAdmin`); reject/merge at staff. Points shown in Settings → Contributions.
 - **Profiles + Follow** — Complete · `services/profile/profile.service.ts`, `routers/profile.ts`, `(app)/u/[username]`, `components/profile/*` (follow-button, profile-actions, message-button) · `profile.byUsername/follow/unfollow/suggested/following/deleteAccount` · follows. Follower count framed as "builders follow their work in [interests]". Profile tabs: Projects/Posts/Following.
 - **Search** — Complete · `services/search`, `routers/search.ts`, `(app)/search` · `search.global` · trigram GIN indexes on posts.body/users.displayName/projects.name+tagline. Debounced client, rate-limited server. Groups: interests/people/posts/projects/communities.
 - **Notifications** — Complete (POLLING, not SSE) · `routers/notification.ts`, `(app)/notifications` · 60s poll unreadCount.
@@ -72,16 +73,16 @@ Format: Status · files · APIs (tRPC unless noted) · tables.
 - Dev-only: session cookie drops on server restart (prod unaffected).
 
 # Recent Changes
-1. Account deletion (GDPR erasure) — profile.deleteAccount + Settings danger zone.
-2. Admin activity panel — 14-day charts (users/posts/comments) + recent signups/posts feed.
-3. Redis-cost optimization — fixed-window rate limiter on hot paths; presence refresh 15s→~50s (90s TTL).
-4. Test harness — vitest + 21 unit tests (git-repo, pagination); wired into CI.
-5. Messaging/DM — SSE+Redis realtime, optimistic send, typing/presence/receipts, block-aware; `/messages` UI + profile Message button + nav.
-6. Trust & safety — reports (Report model) + user blocking (Block model); feed filtering; report dialog + profile/post menus.
-7. Ops hardening — health check, error/404 pages, logger, Sentry wiring, robots/sitemap/OG.
-8. Deploy prep — standalone Dockerfile + `.dockerignore` + GitHub Actions CI + DEPLOY.md.
-9. Media R2/S3 driver behind storage interface (env-gated, local fallback).
-10. Motion polish + premium theme View-Transition radial reveal.
+1. Interest suggestions & rewards — Explore redesign (~45 broad interests + search + Suggest dialog); `interest_requests` table + `User.rewardPoints`; admin Requests/Manage panel (`/admin/interests`) with one-click publish, reject, merge; +50 pts + SYSTEM notification on approval; icon registry (66 lucide) + emoji so interests are DB-driven with zero frontend change. Migration `20260726160317_interest_requests_and_rewards`.
+2. Account deletion (GDPR erasure) — profile.deleteAccount + Settings danger zone.
+3. Admin activity panel — 14-day charts (users/posts/comments) + recent signups/posts feed.
+4. Redis-cost optimization — fixed-window rate limiter on hot paths; presence refresh 15s→~50s (90s TTL).
+5. Test harness — vitest + 21 unit tests (git-repo, pagination); wired into CI.
+6. Messaging/DM — SSE+Redis realtime, optimistic send, typing/presence/receipts, block-aware; `/messages` UI + profile Message button + nav.
+7. Trust & safety — reports (Report model) + user blocking (Block model); feed filtering; report dialog + profile/post menus.
+8. Ops hardening — health check, error/404 pages, logger, Sentry wiring, robots/sitemap/OG.
+9. Deploy prep — standalone Dockerfile + `.dockerignore` + GitHub Actions CI + DEPLOY.md.
+10. Media R2/S3 driver behind storage interface (env-gated, local fallback).
 
 # Deployment
 - **Host**: Railway (deploys the Dockerfile). Free `*.up.railway.app` subdomain fine for prototype.

@@ -20,6 +20,9 @@ export default function LoginPage() {
   const router = useRouter();
   const utils = trpc.useUtils();
   const [notice, setNotice] = useState<string | null>(null);
+  // Holds the address when login is refused for being unverified, so we can
+  // offer a resend without asking the user to retype it.
+  const [unverified, setUnverified] = useState<string | null>(null);
 
   const {
     register,
@@ -27,14 +30,21 @@ export default function LoginPage() {
     formState: { errors },
   } = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
 
+  const resend = trpc.auth.resendVerification.useMutation();
+
   const login = trpc.auth.login.useMutation({
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       setNotice(null);
+      setUnverified(null);
       if (result.status === "SUCCESS") {
         await utils.auth.me.invalidate();
         // Server layout routes to /onboarding if the user hasn't finished it.
         router.push("/home");
         router.refresh();
+        return;
+      }
+      if (result.status === "UNVERIFIED") {
+        setUnverified(variables.email);
         return;
       }
       setNotice(STATUS_MESSAGES[result.status] ?? "Unable to sign in.");
@@ -76,6 +86,35 @@ export default function LoginPage() {
           <p role="alert" className="text-sm font-medium text-destructive">
             {notice}
           </p>
+        )}
+
+        {/*
+          Shown only after a *correct* password on an unverified account, so it
+          reveals nothing to someone guessing addresses.
+        */}
+        {unverified && (
+          <div role="alert" className="space-y-2 rounded-xl border border-warning/40 bg-warning/10 p-3.5">
+            <p className="text-sm font-medium text-foreground">Confirm your email first</p>
+            <p className="text-sm text-muted-foreground">
+              We sent a link to <span className="font-medium text-foreground">{unverified}</span>. Open it to activate
+              your account.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              loading={resend.isPending}
+              disabled={resend.isSuccess}
+              onClick={() => resend.mutate({ email: unverified })}
+            >
+              {resend.isSuccess ? "Link sent" : "Resend link"}
+            </Button>
+            {resend.isError && (
+              <p className="text-sm font-medium text-destructive">
+                {resend.error.message || "Couldn't resend just now."}
+              </p>
+            )}
+          </div>
         )}
 
         <Button type="submit" className="w-full" loading={login.isPending}>

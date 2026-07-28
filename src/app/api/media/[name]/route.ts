@@ -1,4 +1,6 @@
-import { stat, open, readFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
 import path from "node:path";
 import { UPLOAD_DIR } from "@/server/services/media/storage";
 
@@ -16,9 +18,30 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /**
- * Serves stored media. Streams by byte-range when requested (so <video> seeking
- * works). The filename is strictly validated so `..`/slashes can't escape the
- * upload directory.
+ * Largest slice served for one range request. Browsers routinely open a video
+ * with `Range: bytes=0-` (i.e. "the whole thing"); honouring that literally
+ * meant one 95MB video cost ~95MB of process memory per viewer, and a handful
+ * of concurrent viewers could exhaust a small container. Returning fewer bytes
+ * than requested is explicitly allowed for 206 responses (RFC 9110 §15.3.7) —
+ * the player simply issues follow-up ranges as it plays.
+ */
+const MAX_RANGE_CHUNK = 4 * 1024 * 1024; // 4 MiB
+
+/** Node file stream -> Web stream, so bytes flow to the socket without ever
+ *  being fully resident in memory. */
+function fileStream(filePath: string, start: number, end: number): ReadableStream<Uint8Array> {
+  return Readable.toWeb(
+    createReadStream(filePath, { start, end }),
+  ) as unknown as ReadableStream<Uint8Array>;
+}
+
+/**
+ * Serves stored media. Streams by byte-range when requested (so `<video>`
+ * seeking works). The filename is strictly validated so `..`/slashes can't
+ * escape the upload directory.
+ *
+ * Every response body is a stream — nothing is buffered whole, so peak memory
+ * is bounded by the stream's high-water mark rather than by the file size.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const { name } = await params;
@@ -38,6 +61,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
   } catch {
     return new Response("Not found", { status: 404 });
   }
+  if (!fileStat.isFile()) return new Response("Not found", { status: 404 });
 
   const size = fileStat.size;
   const cache = "public, max-age=31536000, immutable";
@@ -47,33 +71,32 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
     const match = /bytes=(\d*)-(\d*)/.exec(range);
     if (match) {
       const start = match[1] ? parseInt(match[1], 10) : 0;
-      const end = match[2] ? parseInt(match[2], 10) : size - 1;
-      if (start > end || start >= size) {
-        return new Response("Range not satisfiable", { status: 416, headers: { "Content-Range": `bytes */${size}` } });
-      }
-      const chunkSize = end - start + 1;
-      const fh = await open(filePath, "r");
-      try {
-        const buf = Buffer.alloc(chunkSize);
-        await fh.read(buf, 0, chunkSize, start);
-        return new Response(buf, {
-          status: 206,
-          headers: {
-            "Content-Type": contentType,
-            "Content-Length": String(chunkSize),
-            "Content-Range": `bytes ${start}-${end}/${size}`,
-            "Accept-Ranges": "bytes",
-            "Cache-Control": cache,
-          },
+      const requestedEnd = match[2] ? parseInt(match[2], 10) : size - 1;
+      if (Number.isNaN(start) || start > requestedEnd || start >= size) {
+        return new Response("Range not satisfiable", {
+          status: 416,
+          headers: { "Content-Range": `bytes */${size}`, "Accept-Ranges": "bytes" },
         });
-      } finally {
-        await fh.close();
       }
+      // Clamp to the file end *and* to our per-response ceiling.
+      const end = Math.min(requestedEnd, size - 1, start + MAX_RANGE_CHUNK - 1);
+      const chunkSize = end - start + 1;
+
+      return new Response(fileStream(filePath, start, end), {
+        status: 206,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Length": String(chunkSize),
+          "Content-Range": `bytes ${start}-${end}/${size}`,
+          "Accept-Ranges": "bytes",
+          "Cache-Control": cache,
+        },
+      });
     }
   }
 
-  const data = await readFile(filePath);
-  return new Response(data, {
+  // No Range header: stream the whole file rather than reading it into a Buffer.
+  return new Response(fileStream(filePath, 0, size - 1), {
     headers: {
       "Content-Type": contentType,
       "Content-Length": String(size),

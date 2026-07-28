@@ -72,13 +72,13 @@ export function Lightbox({
         </>
       )}
 
-      <div className="relative flex max-h-[92vh] max-w-[92vw] items-center justify-center duration-200 ease-out animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+      <div className="relative flex max-h-[92dvh] max-w-[92vw] items-center justify-center duration-200 ease-out animate-in fade-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
         <Image
           src={current.url}
           alt={current.altText ?? ""}
           width={current.width ?? 1600}
           height={current.height ?? 1200}
-          className="max-h-[92vh] w-auto rounded-lg object-contain"
+          className="max-h-[92dvh] w-auto rounded-lg object-contain"
           unoptimized
         />
       </div>

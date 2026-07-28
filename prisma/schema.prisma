@@ -58,6 +58,9 @@ model User {
   // null until the user finishes onboarding (picks Interests + username).
   onboardedAt DateTime?
 
+  // Community-contribution score (e.g. approved interest suggestions). Denormalized.
+  rewardPoints Int @default(0)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -96,6 +99,8 @@ model User {
   reportsFiled       Report[]                  @relation("reporter")
   blocking           Block[]                   @relation("blocker") // users this user has blocked
   blockedBy          Block[]                   @relation("blocked") // users who have blocked this user
+  interestRequests   InterestRequest[]         @relation("interestRequester") // interests this user suggested
+  reviewedRequests   InterestRequest[]         @relation("interestReviewer") // requests this staffer reviewed
 
   @@index([status])
   @@index([role])
@@ -404,10 +409,53 @@ model Interest {
   communities Community[]
   resources   LearningResource[]
   roadmaps    Roadmap[]
+  requests    InterestRequest[] // suggestion requests that produced this interest
 
   @@index([parentId])
   @@index([isFeatured, sortOrder])
   @@map("universes")
+}
+
+// Community-submitted request for a new Interest. Moderated in the admin panel:
+// a staffer publishes it (→ creates an Interest, rewards the requester), rejects
+// it, or merges it into another duplicate request. Interests themselves stay
+// fully DB-driven, so publishing needs no frontend change.
+enum InterestRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MERGED
+}
+
+model InterestRequest {
+  id          String                @id @default(cuid())
+  requesterId String
+  name        String
+  description String                @db.Text
+  reason      String                @db.Text
+  status      InterestRequestStatus @default(PENDING)
+
+  // review trail
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?   @db.Text
+
+  // on APPROVED → the Interest this produced; on MERGED → the request it folded into.
+  publishedInterestId String?
+  mergedIntoId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requester         User             @relation("interestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  reviewedBy        User?            @relation("interestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  publishedInterest Interest?        @relation(fields: [publishedInterestId], references: [id], onDelete: SetNull)
+  mergedInto        InterestRequest? @relation("interestRequestMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom        InterestRequest[] @relation("interestRequestMerge")
+
+  @@index([status, createdAt])
+  @@index([requesterId])
+  @@map("interest_requests")
 }
 
 model UserInterest {

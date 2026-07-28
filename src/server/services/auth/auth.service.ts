@@ -8,7 +8,13 @@ import { createSession, invalidateSession } from "./session";
 import { issueToken, consumeToken } from "./tokens";
 import { upsertDevice } from "./devices";
 import { writeAudit } from "@/server/services/audit/audit";
-import { sendEmail, passwordResetEmail } from "@/server/services/email/email";
+import {
+  sendEmail,
+  passwordResetEmail,
+  verifyEmail as verifyEmailTemplate,
+  type SendResult,
+} from "@/server/services/email/email";
+import { logger } from "@/server/lib/logger";
 
 /**
  * Auth orchestration. Pure of transport concerns — it receives request context
@@ -74,15 +80,30 @@ export interface AuthSuccess {
   newDevice: boolean;
 }
 
+/** Registration no longer returns a session — the account is inert until verified. */
+export interface RegisterSuccess {
+  user: Pick<User, "id" | "username" | "displayName" | "email">;
+  /**
+   * False when the account was created but the verification email could not be
+   * delivered. The signup is still valid — the caller should tell the user to
+   * use "resend" rather than pretend nothing happened.
+   */
+  emailDelivered: boolean;
+}
+
 /**
- * Frictionless registration: creates the account and logs the user in
- * immediately (no email verification). Accounts are usable the instant they're
- * created. The caller places the returned session token in a cookie.
+ * Registration with mandatory email verification.
+ *
+ * The account is created but left UNVERIFIED (`emailVerified: null`) and no
+ * session is issued, so `login()` will refuse it until the emailed link is
+ * consumed. This is what makes the address provably reachable: it is the only
+ * account-recovery channel, so an unverified (or fake) address would mean a
+ * permanently unrecoverable account.
  */
 export async function register(
   input: { email: string; password: string; displayName: string; username?: string },
   meta: RequestMeta,
-): Promise<Result<AuthSuccess, RegisterError>> {
+): Promise<Result<RegisterSuccess, RegisterError>> {
   const existingEmail = await prisma.user.findUnique({
     where: { email: input.email },
     select: { id: true },
@@ -103,22 +124,30 @@ export async function register(
       email: input.email,
       username,
       displayName: input.displayName,
-      // No verification step — the account is active immediately.
-      emailVerified: new Date(),
+      // Stays null until the emailed link is consumed; login() enforces this.
+      emailVerified: null,
       password: { create: { hash, algoVersion: ALGO_VERSION } },
       profile: { create: {} },
     },
     select: { id: true, username: true, displayName: true, email: true },
   });
 
-  const device = await upsertDevice(user.id, meta.userAgent, meta.ipAddress);
-  const { token } = await createSession(user.id, {
-    ipAddress: meta.ipAddress,
-    userAgent: meta.userAgent,
-    deviceId: device.id,
-  });
+  /*
+   * Delivery is deliberately NOT fatal here. The user row is already committed,
+   * so throwing would leave an account that exists but whose owner was told
+   * signup failed — and their retry would hit EMAIL_TAKEN, locking them out of
+   * their own address permanently. The token is issued regardless, so "resend"
+   * works even when this first attempt didn't.
+   */
+  const delivery = await sendVerificationLink(user.id, user.email);
+  if (!delivery.ok) {
+    logger.error("auth.register.verification_email_failed", {
+      userId: user.id,
+      error: delivery.error,
+      retryable: delivery.retryable,
+    });
+  }
 
-  await recordLogin("LOGIN_SUCCESS", user.id, meta);
   await writeAudit({
     actorId: user.id,
     action: "auth.register",
@@ -128,12 +157,71 @@ export async function register(
     userAgent: meta.userAgent,
   });
 
-  return ok({ user, sessionToken: token, newDevice: device.isNew });
+  return ok({ user, emailDelivered: delivery.ok });
+}
+
+// ---- email verification ----------------------------------------------------
+
+/** Issues a fresh verification token and emails the link. Never throws. */
+async function sendVerificationLink(userId: string, email: string): Promise<SendResult> {
+  const raw = await issueToken(userId, "EMAIL_VERIFICATION", email);
+  const url = `${serverEnv.APP_URL}/verify?token=${encodeURIComponent(raw)}`;
+  return sendEmail(verifyEmailTemplate(email, url));
+}
+
+export type VerifyEmailError = "INVALID_OR_EXPIRED";
+
+/**
+ * Consumes a verification token and activates the account. Idempotent in
+ * effect: the token is single-use, so a replayed link fails closed.
+ */
+export async function verifyEmail(
+  rawToken: string,
+  meta: RequestMeta,
+): Promise<Result<{ email: string }, VerifyEmailError>> {
+  const consumed = await consumeToken(rawToken, "EMAIL_VERIFICATION");
+  if (!consumed) return err("INVALID_OR_EXPIRED");
+
+  const user = await prisma.user.update({
+    where: { id: consumed.userId },
+    data: { emailVerified: new Date() },
+    select: { id: true, email: true },
+  });
+
+  await writeAudit({
+    actorId: user.id,
+    action: "auth.email.verified",
+    targetType: "USER",
+    targetId: user.id,
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  });
+  return ok({ email: user.email });
+}
+
+/**
+ * Re-sends the verification link. Always resolves without revealing whether the
+ * address exists or is already verified — the same non-enumeration stance the
+ * password-reset flow takes.
+ */
+export async function resendVerification(email: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, emailVerified: true, deletedAt: true, status: true },
+  });
+  if (!user || user.deletedAt || user.status !== "ACTIVE" || user.emailVerified) return;
+  /*
+   * Failures are swallowed on purpose. An unknown address returns above without
+   * sending; if a *known* address surfaced its delivery error, the caller would
+   * see 200-vs-500 and could enumerate registered emails. The failure is logged
+   * inside sendEmail, which is where operators need it.
+   */
+  await sendVerificationLink(user.id, user.email);
 }
 
 // ---- login -----------------------------------------------------------------
 
-export type LoginError = "INVALID_CREDENTIALS" | "LOCKED" | "MFA_REQUIRED";
+export type LoginError = "INVALID_CREDENTIALS" | "LOCKED" | "MFA_REQUIRED" | "UNVERIFIED";
 
 export type LoginSuccess = AuthSuccess;
 
@@ -178,8 +266,18 @@ export async function login(
     return err("INVALID_CREDENTIALS");
   }
 
-  // Correct password below this line. (Email verification has been removed —
-  // accounts are usable immediately after signup.)
+  // Correct password below this line.
+
+  /*
+   * Verification gate. Checked only after the password is confirmed correct, so
+   * an attacker cannot use this response to discover which addresses are
+   * registered — a wrong password still returns INVALID_CREDENTIALS. No session
+   * is issued; the caller offers to re-send the link.
+   */
+  if (user.emailVerified === null) {
+    await recordLogin("LOGIN_FAILURE", user.id, meta, "email_unverified");
+    return err("UNVERIFIED");
+  }
 
   // Reset failure counters on any successful auth.
   const resets: Record<string, unknown> = {};
@@ -233,12 +331,18 @@ export async function logout(sessionId: string, meta: RequestMeta): Promise<void
 
 // ---- password reset --------------------------------------------------------
 
-/** Always returns void — never reveals whether the email exists. */
+/**
+ * Always returns void — never reveals whether the email exists. That holds even
+ * when the provider is failing: `sendEmail` returns a Result rather than
+ * throwing, so a known-but-undeliverable address is indistinguishable from an
+ * unknown one. The delivery error is logged inside sendEmail.
+ */
 export async function requestPasswordReset(email: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
   if (!user) return;
   const raw = await issueToken(user.id, "PASSWORD_RESET", email);
-  await sendEmail(passwordResetEmail(email, `${serverEnv.APP_URL}/reset-password?token=${raw}`));
+  const url = `${serverEnv.APP_URL}/reset-password?token=${encodeURIComponent(raw)}`;
+  await sendEmail(passwordResetEmail(email, url));
   await writeAudit({ actorId: user.id, action: "auth.password.reset_requested", targetId: user.id });
 }
 

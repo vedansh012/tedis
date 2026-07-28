@@ -13,7 +13,6 @@ import { z } from "zod";
 const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v);
 const optionalStr = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
-const optionalEmail = z.preprocess(emptyToUndefined, z.string().email().optional());
 
 const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -38,8 +37,28 @@ const serverSchema = z.object({
   GITHUB_CLIENT_ID: optionalStr,
   GITHUB_CLIENT_SECRET: optionalStr,
 
-  EMAIL_FROM: optionalEmail,
-  EMAIL_PROVIDER: z.enum(["resend", "postmark", "console"]).default("console"),
+  /*
+   * `postmark` was previously accepted here but had no implementation — it fell
+   * through to the console transport, so a production deploy set to postmark
+   * would have silently dropped every email. Only providers that actually exist
+   * are accepted; add the enum value at the same time as the transport, never
+   * before.
+   */
+  /*
+   * Accepts both a bare address and RFC 5322 display-name form
+   * (`TedIS <noreply@tedis.app>`). A plain `.email()` check rejected the latter,
+   * which is the form you actually want in production for branded senders.
+   */
+  EMAIL_FROM: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .refine((v) => /^[^<>]+<[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+>$/.test(v.trim()) || z.string().email().safeParse(v.trim()).success, {
+        message: 'Must be an email address or "Name <email@domain>"',
+      })
+      .optional(),
+  ),
+  EMAIL_PROVIDER: z.enum(["resend", "console"]).default("console"),
   RESEND_API_KEY: optionalStr,
 
   S3_ENDPOINT: optionalStr,
@@ -50,7 +69,20 @@ const serverSchema = z.object({
   S3_PUBLIC_URL: optionalUrl,
 
   SENTRY_DSN: optionalStr,
-});
+})
+  /*
+   * Cross-field check: selecting a real provider without its credentials used
+   * to fail at the first signup attempt — i.e. in production, on a real user.
+   * Boot-time is the right place to find out.
+   */
+  .refine((e) => e.EMAIL_PROVIDER !== "resend" || !!e.RESEND_API_KEY, {
+    path: ["RESEND_API_KEY"],
+    message: "Required when EMAIL_PROVIDER=resend",
+  })
+  .refine((e) => e.EMAIL_PROVIDER !== "resend" || !!e.EMAIL_FROM, {
+    path: ["EMAIL_FROM"],
+    message: "Required when EMAIL_PROVIDER=resend (e.g. \"TedIS <noreply@yourdomain.com>\")",
+  });
 
 /** Guard so we never accidentally parse server env on the client bundle. */
 function loadServerEnv() {

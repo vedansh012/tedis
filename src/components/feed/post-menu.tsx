@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { MoreHorizontal, Flag, Link2, Check } from "lucide-react";
-import { ReportDialog } from "@/components/moderation/report-dialog";
+import dynamic from "next/dynamic";
+
+// Only mounted after the user opens the kebab menu and chooses "Report".
+const ReportDialog = dynamic(
+  () => import("@/components/moderation/report-dialog").then((m) => m.ReportDialog),
+  { ssr: false },
+);
 
 /** Kebab menu on a post: copy link + report. Fades/slides in; closes on outside click. */
 export function PostMenu({ postId, authorLabel }: { postId: string; authorLabel?: string }) {
@@ -26,7 +32,7 @@ export function PostMenu({ postId, authorLabel }: { postId: string; authorLabel?
         aria-label="Post options"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground active:scale-90"
+        className="flex min-h-touch min-w-touch items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground active:scale-90"
       >
         <MoreHorizontal size={18} />
       </button>

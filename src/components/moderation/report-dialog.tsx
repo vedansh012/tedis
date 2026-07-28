@@ -46,7 +46,7 @@ export function ReportDialog({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-t-2xl border border-border bg-card p-5 shadow-xl duration-200 ease-out animate-in fade-in slide-in-from-bottom-4 sm:rounded-2xl sm:zoom-in-95"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-border bg-card p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-xl duration-200 ease-out animate-in fade-in slide-in-from-bottom-4 sm:max-h-[85dvh] sm:rounded-2xl sm:pb-5 sm:zoom-in-95"
       >
         {done ? (
           <div className="flex flex-col items-center py-6 text-center">

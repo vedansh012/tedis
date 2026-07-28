@@ -6,6 +6,8 @@ import {
   loginSchema,
   requestPasswordResetSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
 } from "@/features/auth/schema";
 import * as auth from "@/server/services/auth/auth.service";
 import { SESSION_COOKIE, invalidateSession, listUserSessions } from "@/server/services/auth/session";
@@ -41,7 +43,7 @@ async function limitOrThrow(key: string, policy: { limit: number; windowMs: numb
 }
 
 export const authRouter = router({
-  // ---- register (instant, auto-login, no email verification) -------------
+  // ---- register (creates an inert account + emails a verification link) ----
   register: publicMutation.input(registerSchema).mutation(async ({ ctx, input }) => {
     await limitOrThrow(`register:ip:${ctx.ipAddress ?? "unknown"}`, RateLimits.register);
     const result = await auth.register(input, { ipAddress: ctx.ipAddress, userAgent: ctx.userAgent });
@@ -54,9 +56,34 @@ export const authRouter = router({
             : "That username is already taken.",
       });
     }
-    // Log the new user straight in.
-    establishSession(ctx, result.value.sessionToken);
-    return { status: "SUCCESS" as const, user: result.value.user };
+    // Deliberately no session: the account cannot be used until it is verified.
+    // `emailDelivered` lets the UI be honest when the provider was down — the
+    // account is real either way, so this is a nudge to resend, not an error.
+    return {
+      status: "VERIFICATION_SENT" as const,
+      email: result.value.user.email,
+      emailDelivered: result.value.emailDelivered,
+    };
+  }),
+
+  // ---- verify email ------------------------------------------------------
+  verifyEmail: publicMutation.input(verifyEmailSchema).mutation(async ({ ctx, input }) => {
+    await limitOrThrow(`verify:ip:${ctx.ipAddress ?? "unknown"}`, RateLimits.verifyEmail);
+    const result = await auth.verifyEmail(input.token, {
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
+    });
+    if (!result.ok) return { status: "INVALID_OR_EXPIRED" as const };
+    return { status: "SUCCESS" as const, email: result.value.email };
+  }),
+
+  // ---- resend verification link ------------------------------------------
+  resendVerification: publicMutation.input(resendVerificationSchema).mutation(async ({ ctx, input }) => {
+    await limitOrThrow(`resend:ip:${ctx.ipAddress ?? "unknown"}`, RateLimits.resendVerification);
+    await limitOrThrow(`resend:acct:${input.email}`, RateLimits.resendVerification);
+    await auth.resendVerification(input.email);
+    // Always the same response — never reveals whether the account exists.
+    return { status: "SENT" as const };
   }),
 
   // ---- login -------------------------------------------------------------

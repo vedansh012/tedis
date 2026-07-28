@@ -5,6 +5,7 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc/client";
 import { useInView } from "@/hooks/use-in-view";
 import { timeAgo } from "@/lib/time";
+import { PartyPopper } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,16 +24,27 @@ const VERB: Record<string, string> = {
   SYSTEM: "",
 };
 
+function dataField(data: unknown, key: string): string {
+  return data && typeof data === "object" && key in data
+    ? String((data as Record<string, unknown>)[key] ?? "")
+    : "";
+}
+
 /** Contextual phrasing: a follow tied to the Interest you're known for reads warmer. */
 function verbFor(n: { type: string; data?: unknown }): string {
   if (n.type === "FOLLOW") {
-    const interestName =
-      n.data && typeof n.data === "object" && "interestName" in n.data
-        ? String((n.data as { interestName?: unknown }).interestName ?? "")
-        : "";
+    const interestName = dataField(n.data, "interestName");
     return interestName ? `started following your work in ${interestName}` : "started following you";
   }
+  // System messages (e.g. an approved interest suggestion) carry their own copy.
+  if (n.type === "SYSTEM") return dataField(n.data, "message");
   return VERB[n.type] ?? "";
+}
+
+/** For actor-less system notifications, deep-link to the relevant place. */
+function hrefFor(n: { type: string; data?: unknown }): string | null {
+  const slug = dataField(n.data, "interestSlug");
+  return n.type === "SYSTEM" && slug ? `/interest/${slug}` : null;
 }
 
 export default function NotificationsPage() {
@@ -82,11 +94,17 @@ export default function NotificationsPage() {
               className={`flex items-center gap-3 rounded-xl border p-3 ${n.readAt ? "border-border bg-card" : "border-primary/30 bg-primary/5"}`}
             >
               {n.actor ? (
-                <Link href={`/u/${n.actor.username}`}>
+                <Link
+                  href={`/u/${n.actor.username}`}
+                  aria-label={`${n.actor.displayName}'s profile`}
+                  className="shrink-0"
+                >
                   <Avatar src={n.actor.profile?.avatarUrl} name={n.actor.displayName} size={36} />
                 </Link>
               ) : (
-                <span className="flex size-9 items-center justify-center rounded-full bg-secondary text-sm">✦</span>
+                <span className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
+                  <PartyPopper size={16} />
+                </span>
               )}
               <p className="flex-1 text-sm">
                 {n.actor && (
@@ -94,7 +112,11 @@ export default function NotificationsPage() {
                     {n.actor.displayName}{" "}
                   </Link>
                 )}
-                <span className="text-muted-foreground">{verbFor(n)}</span>
+                {hrefFor(n) ? (
+                  <Link href={hrefFor(n)!} className="text-foreground hover:underline">{verbFor(n)}</Link>
+                ) : (
+                  <span className="text-muted-foreground">{verbFor(n)}</span>
+                )}
               </p>
               <span className="text-xs text-muted-foreground">{timeAgo(n.createdAt)}</span>
             </li>

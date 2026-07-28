@@ -1,4 +1,6 @@
+import { TRPCError } from "@trpc/server";
 import { prisma } from "@/server/db/prisma";
+import { writeAudit } from "@/server/services/audit/audit";
 import {
   cursorInput,
   decodeCursor,
@@ -6,6 +8,7 @@ import {
   toPage,
   type CursorInput,
 } from "@/lib/pagination";
+import type { CreateInterestInput, UpdateInterestInput } from "@/features/interest/schema";
 
 /** Read model for Interest cards. */
 export function listInterests() {
@@ -105,6 +108,96 @@ export async function leaveInterest(userId: string, interestId: string): Promise
     prisma.userInterest.delete({ where: { userId_interestId: { userId, interestId } } }),
     prisma.interest.update({ where: { id: interestId }, data: { membersCount: { decrement: 1 } } }),
   ]);
+}
+
+// ============================================================
+// ADMIN: interest management (create / edit / soft-delete)
+// ============================================================
+
+/** Full interest list for the admin management table (incl. hidden fields). */
+export function adminListInterests() {
+  return prisma.interest.findMany({
+    where: { deletedAt: null },
+    orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      tagline: true,
+      accentColor: true,
+      iconKey: true,
+      isFeatured: true,
+      sortOrder: true,
+      membersCount: true,
+      projectsCount: true,
+    },
+  });
+}
+
+/** Create an interest directly from the admin panel (no request behind it). */
+export async function createInterest(actorId: string, input: CreateInterestInput) {
+  const [slugTaken, nameTaken] = await Promise.all([
+    prisma.interest.findUnique({ where: { slug: input.slug }, select: { id: true } }),
+    prisma.interest.findFirst({ where: { name: { equals: input.name, mode: "insensitive" } }, select: { id: true } }),
+  ]);
+  if (slugTaken) throw new TRPCError({ code: "CONFLICT", message: `Slug “${input.slug}” is taken.` });
+  if (nameTaken) throw new TRPCError({ code: "CONFLICT", message: `An interest named “${input.name}” already exists.` });
+
+  const maxOrder = await prisma.interest.aggregate({ _max: { sortOrder: true } });
+  const created = await prisma.interest.create({
+    data: {
+      slug: input.slug,
+      name: input.name,
+      tagline: input.tagline || null,
+      description: input.description || null,
+      accentColor: input.accentColor || null,
+      iconKey: input.iconKey || null,
+      isFeatured: input.isFeatured ?? false,
+      sortOrder: (maxOrder._max.sortOrder ?? 0) + 1,
+    },
+    select: { id: true, slug: true },
+  });
+  await writeAudit({ actorId, action: "admin.interest.create", targetType: "INTEREST", targetId: created.id });
+  return created;
+}
+
+/** Edit an existing interest (name, tagline, icon, accent, feature, order). */
+export async function updateInterest(actorId: string, input: UpdateInterestInput) {
+  const { id, ...rest } = input;
+  const exists = await prisma.interest.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  if (!exists) throw new TRPCError({ code: "NOT_FOUND" });
+
+  if (rest.name) {
+    const clash = await prisma.interest.findFirst({
+      where: { name: { equals: rest.name, mode: "insensitive" }, id: { not: id } },
+      select: { id: true },
+    });
+    if (clash) throw new TRPCError({ code: "CONFLICT", message: `An interest named “${rest.name}” already exists.` });
+  }
+
+  await prisma.interest.update({
+    where: { id },
+    data: {
+      ...(rest.name !== undefined ? { name: rest.name } : {}),
+      ...(rest.tagline !== undefined ? { tagline: rest.tagline || null } : {}),
+      ...(rest.description !== undefined ? { description: rest.description || null } : {}),
+      ...(rest.accentColor !== undefined ? { accentColor: rest.accentColor || null } : {}),
+      ...(rest.iconKey !== undefined ? { iconKey: rest.iconKey || null } : {}),
+      ...(rest.isFeatured !== undefined ? { isFeatured: rest.isFeatured } : {}),
+      ...(rest.sortOrder !== undefined ? { sortOrder: rest.sortOrder } : {}),
+    },
+  });
+  await writeAudit({ actorId, action: "admin.interest.update", targetType: "INTEREST", targetId: id });
+  return { ok: true as const };
+}
+
+/** Soft-delete an interest. Members/content are preserved but it leaves Explore. */
+export async function deleteInterest(actorId: string, id: string) {
+  const exists = await prisma.interest.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+  if (!exists) throw new TRPCError({ code: "NOT_FOUND" });
+  await prisma.interest.update({ where: { id }, data: { deletedAt: new Date() } });
+  await writeAudit({ actorId, action: "admin.interest.delete", targetType: "INTEREST", targetId: id });
+  return { ok: true as const };
 }
 
 export async function listInterestMembers(interestId: string, input: CursorInput) {

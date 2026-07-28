@@ -147,12 +147,16 @@ export default function LandingPage() {
 
         {/* footer */}
         <footer className="border-t border-neutral-100">
-          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-neutral-500 sm:flex-row">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-neutral-500 sm:flex-row">
             <div className="flex items-center gap-2">
               <TedisMark size={22} />
               <span className="font-medium text-neutral-700">TedIS</span>
             </div>
-            <p>Build in the open.</p>
+            <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+              <Link href="/terms" className="hover:text-neutral-900">Terms</Link>
+              <Link href="/privacy" className="hover:text-neutral-900">Privacy</Link>
+              <Link href="/cookies" className="hover:text-neutral-900">Cookies</Link>
+            </nav>
           </div>
         </footer>
       </div>

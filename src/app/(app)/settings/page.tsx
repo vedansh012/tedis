@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AvatarUpload } from "@/components/media/avatar-upload";
-import { Monitor, ShieldCheck, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { Monitor, ShieldCheck, TriangleAlert, Award } from "lucide-react";
 
 export default function SettingsPage() {
   const me = trpc.auth.me.useQuery();
@@ -19,10 +20,65 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       </header>
       {me.data ? <ProfileSection username={me.data.username} /> : <Skeleton className="h-64 rounded-xl" />}
+      <ContributionsSection />
       <SessionsSection />
       <LoginHistorySection />
       <DeleteAccountSection />
     </div>
+  );
+}
+
+const REQ_STATUS_STYLE: Record<string, string> = {
+  PENDING: "bg-warning/15 text-warning",
+  APPROVED: "bg-success/15 text-success",
+  MERGED: "bg-success/15 text-success",
+  REJECTED: "bg-secondary text-muted-foreground",
+};
+
+function ContributionsSection() {
+  const contrib = trpc.interest.myContribution.useQuery();
+  const suggestions = contrib.data?.suggestions ?? [];
+
+  return (
+    <section className="space-y-4">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <Award size={14} /> Contributions
+      </h2>
+
+      <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
+          <Award size={22} />
+        </span>
+        <div>
+          <p className="text-2xl font-semibold tabular-nums">{(contrib.data?.points ?? 0).toLocaleString()}</p>
+          <p className="text-sm text-muted-foreground">reward points — thanks for helping build TedIS</p>
+        </div>
+      </div>
+
+      {suggestions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Your interest suggestions</p>
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {suggestions.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 bg-card px-4 py-2.5 text-sm">
+                <span className="min-w-0 truncate">
+                  {s.publishedInterest ? (
+                    <Link href={`/interest/${s.publishedInterest.slug}`} className="font-medium hover:underline">
+                      {s.publishedInterest.name}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{s.name}</span>
+                  )}
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${REQ_STATUS_STYLE[s.status] ?? "bg-secondary"}`}>
+                  {s.status.toLowerCase()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -142,7 +142,7 @@ export function Composer({
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       className={cn(
-        "rounded-xl border bg-card p-4 transition-colors",
+        "rounded-xl border bg-card p-4 transition-colors md:p-5",
         dragging ? "border-primary bg-primary/5" : "border-border",
       )}
     >
@@ -259,8 +259,14 @@ export function Composer({
               <GitBranch size={18} /> Repo
             </button>
 
+            {/*
+              Full-width on mobile (own line, easy to tap) — a fixed max-width
+              here is what caused cramped inline dropdowns on narrow phones.
+              From `sm` up there's room for them to sit inline with the
+              Photo/Video/Repo buttons again.
+            */}
             <select value={interestId} onChange={(e) => setInterestId(e.target.value)} aria-label="Topic"
-              className="h-9 max-w-[9rem] rounded-md border border-input bg-background px-2 text-sm">
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:w-auto sm:max-w-[9rem]">
               <option value="">No topic</option>
               {interests.data?.map((u) => (
                 <option key={u.interest.id} value={u.interest.id}>{u.interest.name}</option>
@@ -269,13 +275,13 @@ export function Composer({
 
             {/* Optional: add this post to a project's timeline. */}
             {lockedProjectId ? (
-              <span className="flex h-9 items-center gap-1.5 rounded-md bg-secondary px-2.5 text-sm text-muted-foreground">
+              <span className="flex h-9 w-full items-center gap-1.5 rounded-md bg-secondary px-2.5 text-sm text-muted-foreground sm:w-auto">
                 📁 <span className="max-w-[9rem] truncate font-medium text-foreground">{lockedProjectName}</span>
               </span>
             ) : (
               myProjects.data && myProjects.data.length > 0 && (
                 <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Attach to project"
-                  className="h-9 max-w-[11rem] rounded-md border border-input bg-background px-2 text-sm">
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:w-auto sm:max-w-[11rem]">
                   <option value="">No project</option>
                   {myProjects.data.map((pr) => (
                     <option key={pr.id} value={pr.id}>📁 {pr.name}</option>

@@ -94,6 +94,70 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
+  /*
+   * Touch-target floor — applied only on coarse pointers (phones, tablets), so
+   * desktop keeps its denser, mouse-appropriate hit areas. 44px is the Apple
+   * HIG / WCAG 2.5.5 comfortable minimum.
+   *
+   * Deliberately scoped to real controls. Inline links inside prose are
+   * excluded (`:not(:where(p, li, span) a)` below is impractical, so anchors are
+   * covered by the explicit .touch-target utility instead) because forcing a
+   * 44px box on a mid-sentence link breaks text flow — WCAG 2.5.8 exempts
+   * inline text links for exactly this reason.
+   */
+  @media (pointer: coarse) {
+    button:not([data-no-touch-min]),
+    select,
+    [role="button"]:not([data-no-touch-min]),
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+      min-height: 44px;
+    }
+    /*
+     * Icon-only controls need both axes. Anchors are only enlarged when they
+     * carry an aria-label (i.e. they are icon/avatar controls, not prose links)
+     * or are explicitly opted in — so links inside sentences keep their natural
+     * line box.
+     */
+    button[aria-label]:not([data-no-touch-min]),
+    a[aria-label]:not([data-no-touch-min]),
+    a.touch-target {
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+    /* Nav links render as full-width rows; height alone is enough there. */
+    nav a,
+    a[data-touch-row] {
+      min-height: 44px;
+    }
+    /* Checkboxes/radios stay visually small but gain a padded hit area. */
+    input[type="checkbox"],
+    input[type="radio"] {
+      min-height: 24px;
+      min-width: 24px;
+    }
+
+    /*
+     * iOS Safari force-zooms the viewport whenever a focused form control has a
+     * font-size below 16px, and never zooms back out — the page is left
+     * horizontally scrolled and the layout appears broken. Pinning editable
+     * controls to 16px on touch devices is the standard fix; desktop keeps the
+     * denser 14px from the component classes.
+     */
+    input:not([type="checkbox"]):not([type="radio"]),
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+
+  /* Opt-in touch sizing for anchors and custom controls that need it. */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
   /* Respect reduced-motion globally. */
   @media (prefers-reduced-motion: reduce) {
     *,

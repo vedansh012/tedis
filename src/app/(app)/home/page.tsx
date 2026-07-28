@@ -26,7 +26,7 @@ export default function HomePage() {
   const posts = feed.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex flex-col items-center gap-2 pt-2 text-center">
         <TedisMark size={92} float priority />
         <p className="text-sm text-muted-foreground">Build in the open</p>
@@ -43,7 +43,7 @@ export default function HomePage() {
       ) : posts.length === 0 ? (
         <EmptyFeed scoped={interest !== null} />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 md:space-y-5">
           {posts.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}

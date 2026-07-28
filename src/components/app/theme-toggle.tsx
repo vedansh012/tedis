@@ -65,7 +65,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={onToggle}
-      className="rounded-lg p-2 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground active:scale-90"
+      className="flex min-h-touch min-w-touch items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground active:scale-90"
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
       {/* keyed so the incoming icon fades + spins in on toggle */}

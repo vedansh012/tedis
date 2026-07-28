@@ -14,8 +14,18 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
+  provider = "postgresql"
+  // Runtime traffic. On Neon/Supabase this must be the POOLED string — the app
+  // opens a pool per instance and Postgres caps total connections.
+  url      = env("DATABASE_URL")
+  // Migrations only. Poolers run PgBouncer in transaction mode, which drops the
+  // session state and advisory locks `prisma migrate deploy` relies on, so DDL
+  // against the pooled URL fails or half-applies.
+  //
+  // REQUIRED once declared — Prisma errors if it is unset, there is no implicit
+  // fallback to DATABASE_URL. Locally, set it to the same value as DATABASE_URL
+  // (no pooler in front of the docker Postgres).
+  directUrl  = env("DIRECT_DATABASE_URL")
   extensions = [pgcrypto, pg_trgm, citext]
 }
 

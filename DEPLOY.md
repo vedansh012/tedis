@@ -17,7 +17,8 @@ The app **fails fast on boot** if any of these are missing/invalid (`src/config/
 | Var | Example | Notes |
 |---|---|---|
 | `APP_URL` | `https://tedis.uk` | Canonical URL (OG, sitemap, WebAuthn origin) |
-| `DATABASE_URL` | `postgresql://…?connection_limit=10` | **Set `connection_limit`** (see §4) |
+| `DATABASE_URL` | `postgresql://…-pooler…?connection_limit=5` | **Pooled** string; set `connection_limit` (see §4) |
+| `DIRECT_DATABASE_URL` | `postgresql://…` (no `-pooler`) | Migrations only; required by Prisma, must bypass the pooler |
 | `REDIS_URL` | `rediss://…` | Sessions, rate limits, queues |
 | `SESSION_SECRET` | 48 random bytes | `openssl rand -base64 48` |
 | `CSRF_SECRET` | 48 random bytes | `openssl rand -base64 48` |

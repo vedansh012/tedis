@@ -38,15 +38,8 @@ const serverSchema = z.object({
   GITHUB_CLIENT_SECRET: optionalStr,
 
   /*
-   * `postmark` was previously accepted here but had no implementation — it fell
-   * through to the console transport, so a production deploy set to postmark
-   * would have silently dropped every email. Only providers that actually exist
-   * are accepted; add the enum value at the same time as the transport, never
-   * before.
-   */
-  /*
    * Accepts both a bare address and RFC 5322 display-name form
-   * (`TedIS <noreply@tedis.app>`). A plain `.email()` check rejected the latter,
+   * (`TedIS <noreply@tedis.uk>`). A plain `.email()` check rejected the latter,
    * which is the form you actually want in production for branded senders.
    */
   EMAIL_FROM: z.preprocess(
@@ -58,6 +51,13 @@ const serverSchema = z.object({
       })
       .optional(),
   ),
+  /*
+   * `postmark` was previously accepted here but had no implementation — it fell
+   * through to the console transport, so a production deploy set to postmark
+   * would have silently dropped every email. Only providers that actually exist
+   * are accepted; add the enum value at the same time as the transport, never
+   * before.
+   */
   EMAIL_PROVIDER: z.enum(["resend", "console"]).default("console"),
   RESEND_API_KEY: optionalStr,
 

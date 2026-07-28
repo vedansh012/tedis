@@ -16,16 +16,16 @@ throughput — reach for it once the API bottlenecks below are fixed.
 
 ```bash
 # staged ramp 100 → 250 → 500 → 1000
-BASE_URL=https://staging.tedis.app k6 run scripts/load/k6-tedis.js
+BASE_URL=https://staging.tedis.uk k6 run scripts/load/k6-tedis.js
 
 # single plateau
-TARGET=500 BASE_URL=https://staging.tedis.app k6 run scripts/load/k6-tedis.js
+TARGET=500 BASE_URL=https://staging.tedis.uk k6 run scripts/load/k6-tedis.js
 
 # smoke-run once to validate the tRPC envelope before a real test
 TARGET=1 k6 run scripts/load/k6-tedis.js
 
 # Locust (web UI on :8089)
-locust -f scripts/load/locustfile.py --host https://staging.tedis.app
+locust -f scripts/load/locustfile.py --host https://staging.tedis.uk
 ```
 
 Optional fixtures make more journeys fire (engagement, follow):

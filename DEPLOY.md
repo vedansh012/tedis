@@ -16,14 +16,14 @@ The app **fails fast on boot** if any of these are missing/invalid (`src/config/
 
 | Var | Example | Notes |
 |---|---|---|
-| `APP_URL` | `https://tedis.app` | Canonical URL (OG, sitemap, WebAuthn origin) |
+| `APP_URL` | `https://tedis.uk` | Canonical URL (OG, sitemap, WebAuthn origin) |
 | `DATABASE_URL` | `postgresql://…?connection_limit=10` | **Set `connection_limit`** (see §4) |
 | `REDIS_URL` | `rediss://…` | Sessions, rate limits, queues |
 | `SESSION_SECRET` | 48 random bytes | `openssl rand -base64 48` |
 | `CSRF_SECRET` | 48 random bytes | `openssl rand -base64 48` |
-| `WEBAUTHN_RP_ID` | `tedis.app` | Bare host, no scheme |
+| `WEBAUTHN_RP_ID` | `tedis.uk` | Bare host, no scheme |
 | `WEBAUTHN_RP_NAME` | `TedIS` | |
-| `WEBAUTHN_ORIGIN` | `https://tedis.app` | Must match APP_URL |
+| `WEBAUTHN_ORIGIN` | `https://tedis.uk` | Must match APP_URL |
 
 **Optional (features activate when set):**
 - Media → R2/S3: `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_URL` (blank = local disk).

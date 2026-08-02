@@ -10,6 +10,14 @@
  * portraits are CC0-licensed stock. Nothing here is hotlinked from a source that
  * forbids it.
  *
+ * No third-party branding. Royalty-free does not mean brand-free — plenty of
+ * otherwise fine stock photos are screenshots of a real company's product or
+ * marketing site. Attached to an invented project they read as that company
+ * endorsing or building it, so any image with a legible logo, product UI or URL
+ * bar is rejected here regardless of its licence. One got through review once
+ * (a payments homepage, complete with the vendor's logo, used as a fictional
+ * startup's cover), which is why this paragraph exists.
+ *
  * Re-verify with:
  *   npx tsx prisma/seed/community/media.ts   (prints every URL, one per line)
  */
@@ -67,7 +75,6 @@ export const IMAGES = {
   dashboardBlue: img("1504868584819-f8e8b4b6d7e3", "A laptop displaying a blue dashboard with charts and a donut graph"),
   dashboardMetrics: img("1560472354-b33ff0c44a43", "A metrics panel showing impressions, click-through rate and position"),
   dashboardLaptop: img("1460925895917-afdab827c52f", "A laptop on a desk showing an analytics dashboard"),
-  dashboardPayments: img("1642132652860-471b4228023e", "A payments product landing page open in a browser"),
 
   uiWireframes: img("1531403009284-440f080d1e12", "A hand arranging printed UI wireframes pinned to a wall"),
   uiResponsive: img("1547658719-da2b51169166", "A landing page design shown on desktop, tablet and phone together"),

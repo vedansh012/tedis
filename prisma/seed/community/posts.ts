@@ -1,10 +1,15 @@
 /**
- * The seeded feed: 46 posts and their comment threads.
+ * Standalone posts — the ones that do not belong to a project.
+ *
+ * Anything that is part of a build story lives in `projects.ts` instead, on the
+ * project's timeline, where it also carries a "Part of <project>" card into the
+ * feed. Events are told exactly once: if a post here started duplicating a
+ * timeline moment, the timeline kept it and this one was deleted.
  *
  * Written by hand for the same reason the personas are — at this volume,
  * generated prose reads as generated. Each post belongs to a specific person and
- * sounds like them: Arjun deletes alerts, Laura is exasperated about changelogs,
- * Ananya is a final-year student who is honest about being lost.
+ * sounds like them: Laura is exasperated about changelogs, Ananya is a final-year
+ * student who is honest about being lost.
  *
  * Rules the corpus follows:
  *  - `daysAgo` spreads posting across roughly ten weeks, weighted recent.
@@ -66,7 +71,7 @@ export const POSTS: readonly SeedPost[] = [
     type: "UPDATE",
     interest: "web-development",
     body: "New checkout is live for all merchants as of this morning. 🎉\n\nThe interesting part wasn't the UI, it was making every step idempotent. A merchant in Kano with a flaky connection will retry a payment four times, and all four requests will arrive — sometimes minutes apart, sometimes out of order. Idempotency keys on every mutation, and a ledger that refuses to double-write.\n\nWe went from ~2.3% duplicate-charge support tickets to zero in the last two weeks.\n\n#payments #fintech #postgres",
-    images: ["dashboardPayments"],
+    images: ["dashboardBlue"],
     daysAgo: 6,
     comments: [
       { author: "tobias", body: "Zero is a strong claim. Are you enforcing that with a unique constraint on the ledger or in application code?", hoursAfter: 3 },
@@ -89,21 +94,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "hannah", body: "\"It technically worked perfectly\" 😂 the most damning bug report there is.", hoursAfter: 6 },
       { author: "ananya", body: "This is really clarifying, thank you. I have a spinner that resolves into nothing in my project right now and I genuinely thought that was fine.", hoursAfter: 31 },
       { author: "sofia", body: "It's the most common thing I see, don't feel bad about it. Add one line of text and a button and you're ahead of most shipped products.", hoursAfter: 34, replyTo: 2 },
-    ],
-  },
-  {
-    key: "arjun-alert-cull",
-    author: "arjun",
-    type: "UPDATE",
-    interest: "devops",
-    body: "Deleted 214 alerts this quarter. We now have 31.\n\nEvery one of the 214 fired at some point and nobody did anything, which means they weren't alerts, they were anxiety with a webhook. The rule we landed on: if an alert doesn't have a documented action, it's a dashboard panel, not a page.\n\nPager volume is down 71%. Nothing has broken that we didn't hear about. 📉\n\n#sre #devops #oncall",
-    images: ["serverRacks"],
-    daysAgo: 12,
-    comments: [
-      { author: "chris", body: "\"Anxiety with a webhook\" is going in my next architecture review, with attribution.", hoursAfter: 1 },
-      { author: "fatima", body: "Did you get pushback? Every time I've proposed deleting alerts someone insists that's the one that'll catch the big one.", hoursAfter: 5 },
-      { author: "arjun", body: "Constantly. What worked was showing the firing history — \"this paged 40 times, here are the 40 times we ignored it.\" Hard to argue with the log.", hoursAfter: 8, replyTo: 1 },
-      { author: "laura", body: "The documented-action rule is really a documentation rule. If nobody can write the runbook, the alert has no meaning.", hoursAfter: 15 },
     ],
   },
   {
@@ -152,22 +142,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "marcus-first-cohort",
-    author: "marcus",
-    type: "MILESTONE",
-    interest: "startups",
-    body: "18 months in: 240 paying teams, $34k MRR, and the first month where revenue covered payroll without me moving money from savings. 🥲\n\nThe honest curve is the one on the right side of that page — flat for nine months. Nine months where I told people \"we're growing\" and technically I wasn't lying because 3 to 5 is growth.\n\nWhat changed wasn't the product. We stopped selling to anyone with field teams and started selling only to HVAC and electrical contractors. Narrower, and suddenly the demo landed every time.\n\n#buildinpublic #startups #saas",
-    images: ["notebookGrowth"],
-    daysAgo: 24,
-    comments: [
-      { author: "omar", body: "The nine flat months are the part nobody posts. Thank you for putting the actual chart up.", hoursAfter: 3 },
-      { author: "daniel", body: "Narrowing the ICP is the single highest-leverage thing we did too. Everyone tells you and nobody believes it until the demos start converting.", hoursAfter: 7 },
-      { author: "sofia", body: "Did the product change at all after you narrowed, or purely the positioning?", hoursAfter: 12 },
-      { author: "marcus", body: "Positioning first, then the product followed — once we only had contractors we could delete three features nobody was using.", hoursAfter: 15, replyTo: 2 },
-      { author: "ananya", body: "Saving this for whenever I stop being scared of building something people pay for.", hoursAfter: 40 },
-    ],
-  },
-  {
     key: "yuki-offline-first",
     author: "yuki",
     type: "UPDATE",
@@ -203,7 +177,9 @@ export const POSTS: readonly SeedPost[] = [
     interest: "open-source",
     body: "What maintaining a library actually looks like this week: 0 features, 14 issues triaged, 6 closed as duplicates, 2 closed as \"working as intended\", 1 genuinely great bug report from someone who included a minimal reproduction and I could have kissed them. 🙏\n\nIf you want to help a maintainer, that last one is how. A repro is worth ten \"any update on this?\" comments.\n\n#opensource #maintainers",
     images: ["codeReactLogo"],
-    gitRepoUrl: "https://github.com/sindresorhus/ky",
+    // Kwame's own project, seeded in projects.ts — never a real third-party repo,
+    // which would read as this fictional person claiming to maintain it.
+    gitRepoUrl: "https://github.com/kwamemensah/riverbed",
     daysAgo: 33,
     comments: [
       { author: "hannah", body: "The minimal reproduction is such an underrated skill. Half the time I find my own bug while making one.", hoursAfter: 3 },
@@ -243,20 +219,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "nadia-token-rename",
-    author: "nadia",
-    type: "UPDATE",
-    interest: "design",
-    body: "We renamed one colour token and it took three weeks. 🎨\n\n`primary` → `action`. That's it. That's the change.\n\nBut `primary` was used for brand moments, focus rings, and the marketing site's hero, by three teams who each assumed their meaning was the real one. Renaming it forced the conversation nobody wanted to have about what the token was *for*.\n\nDesign systems work is mostly archaeology, then diplomacy, then a very small commit.\n\n#designsystems #designtokens",
-    images: ["uiTabletSketch"],
-    daysAgo: 42,
-    comments: [
-      { author: "sofia", body: "\"Archaeology, then diplomacy, then a very small commit\" is the job description. I'm stealing this.", hoursAfter: 2 },
-      { author: "hannah", body: "The focus-ring usage is the one I'd fight for. Semantically it's never the same thing as a brand colour and it breaks contrast requirements the moment brand changes.", hoursAfter: 8 },
-      { author: "nadia", body: "That was exactly the argument that won it. Accessibility gave the rename a reason that wasn't just taste.", hoursAfter: 10, replyTo: 1 },
-    ],
-  },
-  {
     key: "chris-multicloud",
     author: "chris",
     type: "DISCUSSION",
@@ -284,21 +246,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "yuki", body: "DateFormatter is astonishingly expensive and nothing warns you. Same trap exists in Flutter with intl.", hoursAfter: 4 },
       { author: "hannah", body: "The web equivalent is Intl.NumberFormat in a render loop. Identical bug, different framework.", hoursAfter: 9 },
       { author: "wei", body: "Four days to find, two lines to fix — that ratio is basically the definition of a performance bug.", hoursAfter: 21 },
-    ],
-  },
-  {
-    key: "diego-gripper-fail",
-    author: "diego",
-    type: "UPDATE",
-    interest: "robotics",
-    body: "Attempt 340-something at picking up an egg without destroying it. 🥚\n\nThe force feedback loop is tuned well enough now that it stops when it feels resistance. The problem is it feels resistance about 80ms too late, and 80ms is the difference between holding an egg and cleaning up an egg.\n\nLab floor currently has a lot of paper towels on it. Progress, though — last month it wasn't stopping at all.\n\n#robotics #controlsystems #gradschool",
-    images: ["roboticsLab", "engineerSketch"],
-    daysAgo: 51,
-    comments: [
-      { author: "emily", body: "80ms of sensing latency or 80ms of actuation lag? Those need pretty different fixes.", hoursAfter: 6 },
-      { author: "diego", body: "Mostly actuation — the sensor reads fine, the pneumatics just can't reverse that fast. Might have to change hardware, which my budget hates.", hoursAfter: 8, replyTo: 0 },
-      { author: "priya", body: "\"The difference between holding an egg and cleaning up an egg\" made my morning. Good luck with the pneumatics.", hoursAfter: 14 },
-      { author: "ananya", body: "Genuinely inspiring that attempt 340 is a normal number in research. I get discouraged at like attempt 6.", hoursAfter: 33 },
     ],
   },
   {
@@ -349,30 +296,12 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "ananya-hackathon-win",
-    author: "ananya",
-    type: "MILESTONE",
-    interest: "hackathons",
-    body: "WE WON. 🏆\n\n36 hours, four people, a campus accessibility tool that maps step-free routes between buildings. Built it because one of our teammates uses a wheelchair and has been late to class for three years because of a route the campus map insists is fine.\n\nI barely slept, I cried at hour 29 when our maps API quota ran out, and it is the proudest I have ever been of anything.\n\nTo everyone who says hackathon projects don't matter — the disability office asked for a handover meeting. 🥹\n\n#hackathon #accessibility #studentlife",
-    images: ["teamHackathon", "teamHighFive", "teamDesksTopDown"],
-    daysAgo: 63,
-    comments: [
-      { author: "sofia", body: "Building it for a specific person on your own team is exactly why it's good. Congratulations!", hoursAfter: 1 },
-      { author: "marcus", body: "The disability office asking for a handover is worth more than the trophy. That's a real user pulling the product forward.", hoursAfter: 3 },
-      { author: "hannah", body: "As someone who does accessibility work — step-free routing is genuinely hard and chronically ignored. Well done. 👏", hoursAfter: 5 },
-      { author: "laura", body: "If you do hand it over, write the maintenance doc now while it's fresh. Handover projects die from undocumented API keys.", hoursAfter: 11 },
-      { author: "ananya", body: "Writing it this weekend. Also the quota thing is now a documented limitation, learned that one painfully.", hoursAfter: 14, replyTo: 3 },
-      { author: "diego", body: "Hour 29 crying is a rite of passage. Congrats, genuinely.", hoursAfter: 22 },
-    ],
-  },
-  {
     key: "priya-conference-talk",
     author: "priya",
     type: "UPDATE",
     interest: "ai",
-    body: "Gave my first conference talk yesterday: \"Your RAG system is fine, your evaluation isn't.\" 🎤\n\nI have never been that nervous. Shook through the first three slides. Then someone in row two nodded at the part about golden sets and I was fine for the remaining twenty minutes.\n\nThe Q&A was better than the talk. Three people described the exact failure mode I'd spent six months on and thought was ours alone.\n\nSlides are up, link below. Say hi if you were there. 👋\n\n#AI #conference #publicspeaking",
+    body: "Gave my first conference talk yesterday: \"Your RAG system is fine, your evaluation isn't.\" 🎤\n\nI have never been that nervous. Shook through the first three slides. Then someone in row two nodded at the part about golden sets and I was fine for the remaining twenty minutes.\n\nThe Q&A was better than the talk. Three people described the exact failure mode I'd spent six months on and thought was ours alone.\n\nRecording should be up in a few weeks — I'll post it when it lands. Say hi if you were there. 👋\n\n#AI #conference #publicspeaking",
     images: ["speakerStage", "conferenceSkyline"],
-    linkUrl: "https://developer.mozilla.org/en-US/docs/Web/Performance",
     daysAgo: 66,
     comments: [
       { author: "emily", body: "\"The Q&A was better than the talk\" is true of almost every good talk. It means you picked a real problem.", hoursAfter: 4 },
@@ -383,21 +312,6 @@ export const POSTS: readonly SeedPost[] = [
   },
 
   // ---------------------------------------------------------------- videos --
-  {
-    key: "marcus-product-demo",
-    author: "marcus",
-    type: "MILESTONE",
-    interest: "startups",
-    body: "Two-minute walkthrough of the new dispatch board. 🎬\n\nThis replaced a whiteboard in an actual warehouse in Round Rock. The owner sent me a photo of the empty wall, which I have not stopped thinking about.\n\nDrag a job, it reassigns and texts the tech. That's the whole product. It took us eleven months to make it that simple.\n\n#buildinpublic #saas #productdemo",
-    video: "pexelsScreen",
-    daysAgo: 4,
-    comments: [
-      { author: "sofia", body: "Drag-and-drop that texts someone is a deceptively hard interaction to get right. The undo affordance is doing a lot of work here.", hoursAfter: 3 },
-      { author: "daniel", body: "Eleven months to make it simple is the correct amount of time. Congrats on the whiteboard.", hoursAfter: 7 },
-      { author: "nadia", body: "Can you open-source the scheduling grid component? I have been dreading building one of these.", hoursAfter: 18 },
-      { author: "marcus", body: "Tempting — it's very coupled to our data model right now, but I'll take a look at what could be pulled out.", hoursAfter: 21, replyTo: 2 },
-    ],
-  },
   {
     key: "yuki-app-walkthrough",
     author: "yuki",
@@ -440,36 +354,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "rohan", body: "Do you log per-query results or only the aggregate? The clustering insight only works if you keep the raw output.", hoursAfter: 6 },
       { author: "priya", body: "Every query, every config, forever. Storage is cheap and the aggregate has thrown away the interesting part by definition.", hoursAfter: 8, replyTo: 0 },
       { author: "emily", body: "Strongly agree. Half my research findings came from re-reading raw outputs from a run I'd already \"finished\".", hoursAfter: 19 },
-    ],
-  },
-  {
-    key: "arjun-failover-drill",
-    author: "arjun",
-    type: "UPDATE",
-    interest: "devops",
-    body: "Quarterly failover drill. We killed the primary region on purpose at 2pm on a Tuesday, with everyone watching. 🔥\n\nRecovery took 4m12s. Target is 5 minutes, so: pass. But we found two things — a DNS TTL nobody had lowered, and a runbook step that referenced a dashboard that was deleted in March.\n\nDrills aren't about proving it works. They're about finding the March-shaped holes before an actual outage does.\n\n#sre #chaosengineering #devops",
-    video: "pexelsServer",
-    daysAgo: 20,
-    comments: [
-      { author: "chris", body: "2pm on a Tuesday with everyone watching is the correct way to do this. 3am unannounced drills just teach people to hate the exercise.", hoursAfter: 2 },
-      { author: "fatima", body: "The deleted-dashboard runbook step is such a classic. Runbooks rot faster than code because nothing fails when they're wrong.", hoursAfter: 9 },
-      { author: "laura", body: "This is my argument for treating runbooks as code — reviewed, versioned, and ideally tested. A drill is the only test they get.", hoursAfter: 14 },
-      { author: "arjun", body: "We're moving them into the repo next quarter for exactly this reason. Wiki pages are where documentation goes to die.", hoursAfter: 16, replyTo: 2 },
-    ],
-  },
-  {
-    key: "diego-arm-run",
-    author: "diego",
-    type: "UPDATE",
-    interest: "robotics",
-    body: "Best run so far — six successful grasps in a row before it crushed one. 🤖\n\nThe change was moving the compliance check from software into a spring in the gripper itself. Turns out you can solve some control problems with a physical object that costs four euros, and I spent two months trying to solve it in Python.\n\nMy supervisor has been telling me this since October.\n\n#robotics #mechatronics #research",
-    video: "pexelsLab",
-    daysAgo: 23,
-    comments: [
-      { author: "emily", body: "Mechanical compliance beating a control loop is such a satisfying result. Latency you don't have to compensate for is latency that doesn't exist.", hoursAfter: 7 },
-      { author: "wei", body: "The software equivalent is solving a caching problem by just making the thing fast. Sometimes the layer you're working in is the wrong layer.", hoursAfter: 13 },
-      { author: "diego", body: "That's a very good analogy and I'm going to use it to explain my last two months to my committee.", hoursAfter: 15, replyTo: 1 },
-      { author: "ananya", body: "Six in a row! That's a real result, congrats.", hoursAfter: 26 },
     ],
   },
   {
@@ -527,21 +411,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "hannah", body: "Making the measurement visible to whoever prioritises is the whole game. A number in your terminal convinces nobody.", hoursAfter: 6 },
       { author: "sofia", body: "Side-by-side video is the single most effective way I've found to get design quality issues taken seriously too.", hoursAfter: 14 },
       { author: "yuki", body: "Stealing this technique for our next roadmap conversation, thank you.", hoursAfter: 25 },
-    ],
-  },
-  {
-    key: "omar-live-transcription",
-    author: "omar",
-    type: "UPDATE",
-    interest: "ai",
-    body: "Live dialect transcription, unedited, first take. 🎧\n\nIt gets a place name wrong at the eight-second mark and I left it in, because every demo video you have ever seen was the ninth take and that is why demos feel dishonest.\n\nStill: this is a sentence in Egyptian Arabic being transcribed correctly in real time on a laptop, and eighteen months ago I was told that market was too small to build for.\n\n#AI #speech #startups",
-    video: "pexelsCity",
-    daysAgo: 38,
-    comments: [
-      { author: "priya", body: "Leaving the error in makes me trust the rest of the clip far more. Nine-take demos are the reason nobody believes AI videos.", hoursAfter: 4 },
-      { author: "marcus", body: "\"Too small to build for\" is what people said about every vertical SaaS that now prints money.", hoursAfter: 9 },
-      { author: "emily", body: "Real-time on a laptop is the impressive part here. What's the model size?", hoursAfter: 17 },
-      { author: "omar", body: "Distilled down to about 240M params. Bigger versions score better but can't run on the hardware our users own, which makes them useless to us.", hoursAfter: 19, replyTo: 2 },
     ],
   },
   {
@@ -712,7 +581,7 @@ export const POSTS: readonly SeedPost[] = [
     type: "RESOURCE",
     interest: "system-design",
     body: "The clearest writing on retries and idempotency I've found, and I've read a lot of bad writing on retries and idempotency.\n\nThe part worth internalising: a retry is a new request that happens to look like an old one. The network cannot tell you whether the first one succeeded — only your own state can. Everything else follows from that.\n\nIf you're building anything that talks to another service over a network, this is worth an hour. 📚\n\n#systemdesign #distributedsystems #reliability",
-    linkUrl: "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods",
+    linkUrl: "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent",
     daysAgo: 50,
     comments: [
       { author: "daniel", body: "\"A retry is a new request that happens to look like an old one\" is the framing that finally made this click for me.", hoursAfter: 6 },

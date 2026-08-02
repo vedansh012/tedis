@@ -30,6 +30,7 @@ import { hashPassword } from "../../../src/server/services/auth/password";
 import { stream, int, float, chance, pick, pickMany, shuffle, logNormal, humanizeHour } from "../rng";
 import { PEOPLE, emailFor, ALL_SKILLS, type Person } from "./people";
 import { POSTS, POST_COUNTS, type SeedPost } from "./posts";
+import { PROJECTS, PROJECT_COUNTS, type TimelinePost } from "./projects";
 import { IMAGES, VIDEOS } from "./media";
 
 /**
@@ -59,9 +60,15 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
 
   const interests = await prisma.interest.findMany({ select: { id: true, slug: true } });
   const interestBySlug = new Map(interests.map((i) => [i.slug, i.id]));
-  const missing = [...new Set([...PEOPLE.flatMap((p) => p.interests), ...POSTS.map((p) => p.interest)])].filter(
-    (s) => !interestBySlug.has(s),
-  );
+  const missing = [
+    ...new Set([
+      ...PEOPLE.flatMap((p) => p.interests),
+      ...POSTS.map((p) => p.interest),
+      ...PROJECTS.map((p) => p.interest),
+      // Explicit nulls are untagged on purpose and are not a missing interest.
+      ...PROJECTS.flatMap((p) => p.timeline.map((t) => t.interest).filter((s): s is string => typeof s === "string")),
+    ]),
+  ].filter((s) => !interestBySlug.has(s));
   if (missing.length) {
     throw new Error(`Seed corpus references unknown interests: ${missing.join(", ")}. Seed reference data first.`);
   }
@@ -155,11 +162,108 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
     });
   }
 
+  // --------------------------------------------------------------- projects --
+  // Written before posts, because a timeline post has to point at its project.
+  const techIds = new Map<string, string>();
+  for (const name of [...new Set(PROJECTS.flatMap((p) => p.technologies))]) {
+    const slug = slugify(name);
+    const tech = await prisma.technology.upsert({
+      where: { slug },
+      update: {},
+      create: { name, slug },
+      select: { id: true },
+    });
+    techIds.set(name, tech.id);
+  }
+
+  const projectIds = new Map<string, string>();
+  for (const project of PROJECTS) {
+    const projectId = id("project", project.key);
+    const createdAt = daysBefore(project.createdDaysAgo);
+    const fields = {
+      ownerId: userIds.get(project.owner)!,
+      name: project.name,
+      tagline: project.tagline,
+      description: project.description,
+      status: project.status,
+      visibility: "PUBLIC" as const,
+      coverUrl: IMAGES[project.cover].url,
+      interestId: interestBySlug.get(project.interest)!,
+      repoUrl: project.repoUrl,
+      openToCollab: project.openToCollab,
+    };
+
+    await prisma.project.upsert({
+      where: { id: projectId },
+      update: fields,
+      create: { id: projectId, slug: project.slug, createdAt, updatedAt: createdAt, ...fields },
+      select: { id: true },
+    });
+    projectIds.set(project.key, projectId);
+
+    for (const { key, role } of project.contributors) {
+      await prisma.projectContributor.upsert({
+        where: { projectId_userId: { projectId, userId: userIds.get(key)! } },
+        update: { role },
+        create: { projectId, userId: userIds.get(key)!, role, createdAt },
+      });
+    }
+    for (const name of project.technologies) {
+      await prisma.projectTechnology.upsert({
+        where: { projectId_techId: { projectId, techId: techIds.get(name)! } },
+        update: {},
+        create: { projectId, techId: techIds.get(name)! },
+      });
+    }
+    // Links and media are fully derived from the corpus, so replacing beats diffing.
+    await prisma.projectLink.deleteMany({ where: { projectId } });
+    if (project.links.length) {
+      await prisma.projectLink.createMany({
+        data: project.links.map((l) => ({ projectId, kind: l.kind, label: l.label, url: l.url })),
+      });
+    }
+    await prisma.projectMedia.deleteMany({ where: { projectId } });
+    await prisma.projectMedia.create({
+      data: {
+        projectId,
+        type: "IMAGE",
+        url: IMAGES[project.cover].url,
+        altText: IMAGES[project.cover].alt,
+        sortOrder: 0,
+      },
+    });
+  }
+
   // ------------------------------------------------------------------ posts --
   const rng = stream("engagement");
   const otherKeys = (exclude: string) => PEOPLE.map((p) => p.key).filter((k) => k !== exclude);
 
-  for (const post of POSTS) {
+  // Standalone posts and project build-logs are the same kind of row, so they are
+  // normalised into one list and written by one loop — engagement, comments and
+  // media then behave identically whichever corpus a post came from.
+  const allPosts: NormalizedPost[] = [
+    ...POSTS.map((p) => ({ ...p, interestSlug: p.interest as string | null, projectKey: null })),
+    ...PROJECTS.flatMap((project) =>
+      project.timeline.map((t: TimelinePost) => ({
+        key: t.key,
+        // A build-log post is the owner's unless a contributor is named.
+        author: t.author ?? project.owner,
+        type: t.type,
+        body: t.body,
+        images: t.images,
+        video: t.video,
+        linkUrl: t.linkUrl,
+        gitRepoUrl: undefined,
+        // `undefined` inherits the project's topic; an explicit null stays untagged.
+        interestSlug: t.interest === undefined ? project.interest : t.interest,
+        projectKey: project.key,
+        daysAgo: t.daysAgo,
+        comments: t.comments,
+      })),
+    ),
+  ];
+
+  for (const post of allPosts) {
     const author = PEOPLE.find((p) => p.key === post.author)!;
     const postId = id("post", post.key);
     const createdAt = humanizeHour(rng, daysBefore(post.daysAgo));
@@ -176,7 +280,8 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
       type: post.type,
       visibility: "PUBLIC" as const,
       body: post.body,
-      interestId: interestBySlug.get(post.interest)!,
+      interestId: post.interestSlug ? interestBySlug.get(post.interestSlug)! : null,
+      projectId: post.projectKey ? projectIds.get(post.projectKey)! : null,
       linkUrl: post.linkUrl ?? null,
       gitRepoUrl: post.gitRepoUrl ?? null,
       reactionsCount,
@@ -271,6 +376,32 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
     }
   }
 
+  // Content deleted from the corpus must disappear from the database too,
+  // otherwise editing the seed only ever adds and a removed post lingers as a
+  // ghost that no file explains. Scoped to seeded rows, so a real post authored
+  // by anyone is never a candidate.
+  const liveIds = allPosts.map((p) => id("post", p.key));
+  const stale = await prisma.post.findMany({
+    where: { isSeeded: true, id: { notIn: liveIds } },
+    select: { id: true },
+  });
+  if (stale.length) {
+    const staleIds = stale.map((p) => p.id);
+    await prisma.reaction.deleteMany({ where: { targetType: "POST", targetId: { in: staleIds } } });
+    await prisma.bookmark.deleteMany({ where: { targetType: "POST", targetId: { in: staleIds } } });
+    await prisma.post.deleteMany({ where: { id: { in: staleIds } } });
+    console.log(`  Removed ${stale.length} post(s) no longer present in the corpus.`);
+  }
+
+  const staleProjects = await prisma.project.findMany({
+    where: { id: { startsWith: `${NS}-project-` }, NOT: { id: { in: PROJECTS.map((p) => id("project", p.key)) } } },
+    select: { id: true },
+  });
+  if (staleProjects.length) {
+    await prisma.project.deleteMany({ where: { id: { in: staleProjects.map((p) => p.id) } } });
+    console.log(`  Removed ${staleProjects.length} project(s) no longer present in the corpus.`);
+  }
+
   // -------------------------------------------------------------- counters --
   for (const person of PEOPLE) {
     const userId = userIds.get(person.key)!;
@@ -291,10 +422,17 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
     await prisma.interest.update({ where: { id: interest.id }, data: { membersCount } });
   }
 
+  const withImages = allPosts.filter((p) => p.images?.length).length;
+  const withVideo = allPosts.filter((p) => p.video).length;
+  const comments = allPosts.reduce((n, p) => n + p.comments.length, 0);
   console.log(
-    `  ${PEOPLE.length} people · ${POSTS.length} posts ` +
-      `(${POST_COUNTS.withImages} image, ${POST_COUNTS.withVideo} video, ${POST_COUNTS.textOnly} text) · ` +
-      `${POST_COUNTS.comments} comments · ${edges.length} follows`,
+    `  ${PEOPLE.length} people · ${allPosts.length} posts ` +
+      `(${withImages} image, ${withVideo} video, ${allPosts.length - withImages - withVideo} text) · ` +
+      `${comments} comments · ${edges.length} follows`,
+  );
+  console.log(
+    `  ${PROJECT_COUNTS.projects} projects · ${PROJECT_COUNTS.timelinePosts} build-log posts ` +
+      `(${POSTS.length} standalone, ${PROJECT_COUNTS.untagged} untagged)`,
   );
   if (existingBefore === 0) {
     console.log(`\n  Sign in as any of them:  <username>@seed.tedis.invalid`);
@@ -347,7 +485,17 @@ function profileFields(person: Person) {
   };
 }
 
-function mediaRowsFor(post: SeedPost): Prisma.PostMediaCreateManyPostInput[] {
+/**
+ * A post as the writer sees it, after standalone and build-log corpora are
+ * flattened together. `interestSlug: null` is an untagged post — legal, and
+ * reachable only by the author's followers, which is why most posts have one.
+ */
+interface NormalizedPost extends Omit<SeedPost, "interest"> {
+  interestSlug: string | null;
+  projectKey: string | null;
+}
+
+function mediaRowsFor(post: Pick<NormalizedPost, "images" | "video">): Prisma.PostMediaCreateManyPostInput[] {
   const rows: Prisma.PostMediaCreateManyPostInput[] = [];
   if (post.video) {
     const v = VIDEOS[post.video];
@@ -449,15 +597,80 @@ function buildFollowGraph(): Array<[string, string]> {
   return [...edges].map((e) => e.split("|") as [string, string]);
 }
 
-/** Fails the run rather than silently seeding a corpus that drifted out of spec. */
+/**
+ * Fails the run rather than silently seeding a corpus that drifted out of spec.
+ *
+ * The duplicate-text checks matter more than they look: the seed's whole promise
+ * is that it reads as a real community, and the fastest way to break that is to
+ * reuse a post or a comment. It happened once already, when a project timeline
+ * retold a standalone post word for word — so it is now a hard failure.
+ */
+function assertNoRepeatedText(): void {
+  const posts = [
+    ...POSTS.map((p) => [p.key, p.body] as const),
+    ...PROJECTS.flatMap((p) => p.timeline.map((t) => [t.key, t.body] as const)),
+  ];
+  const comments = [
+    ...POSTS.flatMap((p) => p.comments.map((c, i) => [`${p.key}#${i}`, c.body] as const)),
+    ...PROJECTS.flatMap((p) => p.timeline.flatMap((t) => t.comments.map((c, i) => [`${t.key}#${i}`, c.body] as const))),
+  ];
+
+  for (const [label, rows] of [["post", posts], ["comment", comments]] as const) {
+    const seen = new Map<string, string>();
+    for (const [key, body] of rows) {
+      const previous = seen.get(body);
+      if (previous) {
+        throw new Error(`Duplicate ${label} text: "${key}" repeats "${previous}" verbatim. Keep one, rewrite or delete the other.`);
+      }
+      seen.set(body, key);
+    }
+  }
+}
+
 function assertCorpus(): void {
+  assertNoRepeatedText();
   const keys = new Set(PEOPLE.map((p) => p.key));
   const usernames = new Set(PEOPLE.map((p) => p.username));
   if (usernames.size !== PEOPLE.length) throw new Error("Duplicate username in the persona corpus");
   if (keys.size !== PEOPLE.length) throw new Error("Duplicate persona key");
 
-  const postKeys = new Set(POSTS.map((p) => p.key));
-  if (postKeys.size !== POSTS.length) throw new Error("Duplicate post key");
+  const allPostKeys = [...POSTS.map((p) => p.key), ...PROJECTS.flatMap((p) => p.timeline.map((t) => t.key))];
+  if (new Set(allPostKeys).size !== allPostKeys.length) throw new Error("Duplicate post key");
+
+  const slugs = new Set(PROJECTS.map((p) => p.slug));
+  if (slugs.size !== PROJECTS.length) throw new Error("Duplicate project slug");
+
+  for (const project of PROJECTS) {
+    if (!keys.has(project.owner)) throw new Error(`Project ${project.key} has unknown owner ${project.owner}`);
+    if (!(project.cover in IMAGES)) throw new Error(`Project ${project.key} references unknown cover ${project.cover}`);
+    if (!project.contributors.some((c) => c.key === project.owner)) {
+      throw new Error(`Project ${project.key} does not list its own owner as a contributor`);
+    }
+    for (const c of project.contributors) {
+      if (!keys.has(c.key)) throw new Error(`Project ${project.key} has unknown contributor ${c.key}`);
+    }
+    // The timeline is rendered oldest-first; a corpus written out of order would
+    // silently tell the story backwards.
+    const days = project.timeline.map((t) => t.daysAgo);
+    for (let i = 1; i < days.length; i++) {
+      if (days[i]! >= days[i - 1]!) {
+        throw new Error(`Project ${project.key} timeline is not in chronological order at "${project.timeline[i]!.key}"`);
+      }
+    }
+    if (days[0]! > project.createdDaysAgo) {
+      throw new Error(`Project ${project.key} has a post older than the project itself`);
+    }
+    for (const t of project.timeline) {
+      if (t.author && !keys.has(t.author)) throw new Error(`Timeline post ${t.key} has unknown author ${t.author}`);
+      for (const c of t.comments) {
+        if (!keys.has(c.author)) throw new Error(`Comment on ${t.key} has unknown author ${c.author}`);
+      }
+      for (const i of t.images ?? []) {
+        if (!(i in IMAGES)) throw new Error(`Timeline post ${t.key} references unknown image ${i}`);
+      }
+      if (t.video && !(t.video in VIDEOS)) throw new Error(`Timeline post ${t.key} references unknown video ${t.video}`);
+    }
+  }
 
   for (const post of POSTS) {
     if (!keys.has(post.author)) throw new Error(`Post ${post.key} has unknown author ${post.author}`);

@@ -263,6 +263,16 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
     ),
   ];
 
+  // Engagement rows are accumulated and written in a few batched createMany
+  // calls after the loop, not one upsert per row. Against a pooled remote
+  // database (Neon/Supabase) the per-row version fired thousands of sequential
+  // round-trips and the pooler eventually dropped the connection mid-run (P1017).
+  // Batching turns that into a handful of statements. Every target here has a
+  // unique constraint, so skipDuplicates makes re-runs idempotent.
+  const reactionRows: Prisma.ReactionCreateManyInput[] = [];
+  const bookmarkRows: Prisma.BookmarkCreateManyInput[] = [];
+  const shareRows: Prisma.PostShareCreateManyInput[] = [];
+
   for (const post of allPosts) {
     const author = PEOPLE.find((p) => p.key === post.author)!;
     const postId = id("post", post.key);
@@ -337,7 +347,7 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
       // Real reactions on the comment, capped by how many accounts exist.
       const commentReactors = pickMany(rng, otherKeys(comment.author), Math.min(reactions, 6));
       for (const key of commentReactors) {
-        await upsertReaction(prisma, userIds.get(key)!, "COMMENT", commentId, at);
+        reactionRows.push({ userId: userIds.get(key)!, targetType: "COMMENT", targetId: commentId, kind: "RESPECT", createdAt: at });
       }
     }
 
@@ -346,35 +356,31 @@ export async function seedCommunity(prisma: PrismaClient): Promise<void> {
     const reactorKeys = pickMany(rng, otherKeys(post.author), Math.min(reactionsCount, PEOPLE.length - 1));
     for (const key of reactorKeys) {
       const at = new Date(createdAt.getTime() + int(rng, 20, 60 * 40) * 60 * 1000);
-      await upsertReaction(prisma, userIds.get(key)!, "POST", postId, at);
+      reactionRows.push({ userId: userIds.get(key)!, targetType: "POST", targetId: postId, kind: "RESPECT", createdAt: at });
     }
 
     const saverKeys = pickMany(rng, otherKeys(post.author), Math.min(bookmarksCount, 8));
     for (const key of saverKeys) {
-      const userId = userIds.get(key)!;
-      await prisma.bookmark.upsert({
-        where: { userId_targetType_targetId: { userId, targetType: "POST", targetId: postId } },
-        update: {},
-        create: { userId, targetType: "POST", targetId: postId, createdAt },
-      });
+      bookmarkRows.push({ userId: userIds.get(key)!, targetType: "POST", targetId: postId, createdAt });
     }
 
     const sharerKeys = pickMany(rng, otherKeys(post.author), Math.min(sharesCount, 5));
     for (const [i, key] of sharerKeys.entries()) {
-      const shareId = id("share", post.key, String(i));
-      await prisma.postShare.upsert({
-        where: { id: shareId },
-        update: {},
-        create: {
-          id: shareId,
-          postId,
-          userId: userIds.get(key)!,
-          target: pick(rng, ["COPY_LINK", "COPY_LINK", "NATIVE_SHARE"]),
-          createdAt,
-        },
+      shareRows.push({
+        id: id("share", post.key, String(i)),
+        postId,
+        userId: userIds.get(key)!,
+        target: pick(rng, ["COPY_LINK", "COPY_LINK", "NATIVE_SHARE"]),
+        createdAt,
       });
     }
   }
+
+  // Flush engagement in chunks. skipDuplicates makes each batch idempotent, so a
+  // dropped connection mid-flush is recovered simply by re-running the seed.
+  await createManyInChunks("reactions", reactionRows, (data) => prisma.reaction.createMany({ data, skipDuplicates: true }));
+  await createManyInChunks("bookmarks", bookmarkRows, (data) => prisma.bookmark.createMany({ data, skipDuplicates: true }));
+  await createManyInChunks("shares", shareRows, (data) => prisma.postShare.createMany({ data, skipDuplicates: true }));
 
   // Content deleted from the corpus must disappear from the database too,
   // otherwise editing the seed only ever adds and a removed post lingers as a
@@ -524,20 +530,25 @@ function mediaRowsFor(post: Pick<NormalizedPost, "images" | "video">): Prisma.Po
   return rows;
 }
 
-async function upsertReaction(
-  prisma: PrismaClient,
-  userId: string,
-  targetType: "POST" | "COMMENT",
-  targetId: string,
-  createdAt: Date,
+/**
+ * Insert rows in bounded batches. One createMany of ten-thousand rows is a
+ * single oversized statement a pooler may reject; a per-row loop is thousands of
+ * round-trips a pooler may drop halfway. Chunks of a few hundred are the middle
+ * ground — few enough calls to be reliable, small enough to parse cheaply.
+ */
+async function createManyInChunks<T>(
+  label: string,
+  rows: T[],
+  insert: (data: T[]) => Promise<{ count: number }>,
+  chunkSize = 500,
 ): Promise<void> {
-  await prisma.reaction.upsert({
-    where: {
-      userId_targetType_targetId_kind: { userId, targetType, targetId, kind: "RESPECT" },
-    },
-    update: {},
-    create: { userId, targetType, targetId, kind: "RESPECT", createdAt },
-  });
+  if (rows.length === 0) return;
+  let written = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const res = await insert(rows.slice(i, i + chunkSize));
+    written += res.count;
+  }
+  console.log(`  ${label}: ${written} written (${rows.length - written} already present)`);
 }
 
 /**

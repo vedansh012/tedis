@@ -4,9 +4,11 @@ import { getHiddenUserIds } from "@/server/services/moderation/moderation.servic
 import {
   cursorInput,
   decodeCursor,
+  decodeTieredCursor,
   cursorWhere,
   keysetOrderBy,
   toPage,
+  toTieredPage,
   type CursorInput,
 } from "@/lib/pagination";
 
@@ -71,57 +73,102 @@ export interface HomeFeedInput extends CursorInput {
 }
 
 /**
- * "For You" home feed: posts from the viewer's Interests and the people they
- * follow — showcasing OTHER creators. The viewer's own posts are deliberately
- * excluded (they live on the viewer's profile), so the feed stays a place to
- * discover, not to re-read yourself. Optionally scoped to one Interest.
- * Keyset-paginated.
+ * "For You" home feed: relevant posts first, then the rest of the platform.
+ *
+ * Two tiers, each ordered newest-first:
+ *   0 — posts in the viewer's Interests, or by people they follow.
+ *   1 — every other public post.
+ *
+ * Tier 0 is exhausted before tier 1 begins, so picking Interests genuinely
+ * changes what you see first, while a viewer who has picked nothing still gets
+ * a full feed instead of an empty page. That second half is the important one:
+ * an interest-only feed shows a new account nothing at all, which reads as a
+ * broken product rather than an invitation to choose topics.
+ *
+ * Selecting a single Interest (the feed pills) is a filter, not a ranking, so it
+ * stays strictly scoped to that Interest — no discovery tier.
+ *
+ * The viewer's own posts are excluded (they live on the viewer's profile), as is
+ * anyone in a block relationship with them.
+ *
+ * Ranking is still follower-blind: tier membership comes from topic relevance
+ * and follow edges deciding *visibility*, never from anyone's follower count.
  */
 export async function homeFeed(viewerId: string, input: HomeFeedInput) {
   const { limit, cursor } = cursorInput.parse(input);
-  const decoded = decodeCursor(cursor);
+  const decoded = decodeTieredCursor(cursor);
 
   const [interests, following, hiddenIds] = await Promise.all([
     prisma.userInterest.findMany({ where: { userId: viewerId }, select: { interestId: true } }),
     prisma.follow.findMany({ where: { followerId: viewerId }, select: { followingId: true } }),
     getHiddenUserIds(viewerId),
   ]);
-  const interestIds = input.interestId
-    ? [input.interestId]
-    : interests.map((u) => u.interestId);
   const followingIds = following.map((f) => f.followingId);
 
-  // Interest-first: with no interests picked and nobody followed, there is
-  // nothing personalized to show (prompting the viewer to pick Interests).
-  const scope: Prisma.PostWhereInput[] = [];
-  if (interestIds.length) scope.push({ interestId: { in: interestIds } });
-  if (followingIds.length) scope.push({ authorId: { in: followingIds } });
-  if (scope.length === 0) return { items: [], nextCursor: undefined };
+  const base: Prisma.PostWhereInput = {
+    deletedAt: null,
+    visibility: "PUBLIC",
+    authorId: { notIn: [viewerId, ...hiddenIds] },
+  };
 
-  const rows = await prisma.post.findMany({
-    where: {
-      deletedAt: null,
-      visibility: "PUBLIC",
-      // Exclude the viewer's own posts ("For You" is other creators) and anyone
-      // in a block relationship with the viewer (either direction).
-      authorId: { notIn: [viewerId, ...hiddenIds] },
-      OR: scope,
-      ...cursorWhere(decoded),
-    },
-    take: limit + 1,
-    orderBy: keysetOrderBy,
-    select: postSelect,
-  });
+  // Each entry is one tier's `where`, highest priority first.
+  const interestIds = interests.map((u) => u.interestId);
+  let tiers: Prisma.PostWhereInput[];
+  if (input.interestId) {
+    tiers = [{ interestId: input.interestId }];
+  } else if (interestIds.length || followingIds.length) {
+    const relevant: Prisma.PostWhereInput[] = [];
+    const notRelevant: Prisma.PostWhereInput[] = [];
+    if (interestIds.length) {
+      relevant.push({ interestId: { in: interestIds } });
+      // The complement is spelled out rather than written as NOT(IN): an
+      // untagged post has interestId NULL, `NULL IN (…)` is NULL, and NOT NULL
+      // is still NULL — so a plain negation drops every untagged post out of
+      // both tiers and it becomes unreachable from the feed entirely.
+      notRelevant.push({ OR: [{ interestId: null }, { interestId: { notIn: interestIds } }] });
+    }
+    if (followingIds.length) {
+      relevant.push({ authorId: { in: followingIds } });
+      notRelevant.push({ authorId: { notIn: followingIds } });
+    }
+    tiers = [{ OR: relevant }, { AND: notRelevant }];
+  } else {
+    // Nothing to be relevant to — one tier containing everything, which is what
+    // makes a brand-new account's feed full instead of empty.
+    tiers = [{}];
+  }
 
-  const page = toPage(rows, limit);
+  // Walk tiers from wherever the cursor left off, topping up until the page is
+  // full. Each tier is its own keyset scan, so this stays index-friendly.
+  const need = limit + 1;
+  const rows: (RawPost & { tier: number })[] = [];
+  for (let tier = decoded?.tier ?? 0; tier < tiers.length && rows.length < need; tier++) {
+    // Only the tier the cursor points into resumes mid-scan; later ones start fresh.
+    const tierCursor = tier === decoded?.tier ? decoded : null;
+    const fetched = await prisma.post.findMany({
+      // AND, not object spread: both the tier filter and the keyset predicate
+      // are `OR` clauses, and spreading them into one object silently drops the
+      // first. That turned tier 0 into "everything" on page two and beyond.
+      where: { ...base, AND: [tiers[tier]!, cursorWhere(tierCursor)] },
+      take: need - rows.length,
+      orderBy: keysetOrderBy,
+      select: postSelect,
+    });
+    rows.push(...fetched.map((row) => ({ ...row, tier })));
+  }
+
+  const page = toTieredPage(rows, limit);
   const items = await decorateViewerState(page.items, viewerId);
   return { items, nextCursor: page.nextCursor };
 }
 
-// FOLLOWER-BLIND RANKING GUARANTEE: every feed in this file is ordered purely
-// chronologically (keyset on createdAt). Follow edges affect *which* posts a
-// viewer sees, never their rank — no query references followersCount or follow
-// counts as a ranking signal. Keep it that way.
+// FOLLOWER-BLIND RANKING GUARANTEE: no query in this file references
+// followersCount, reactionsCount or any popularity signal when ordering. Every
+// feed is chronological (keyset on createdAt) within its scope; the home feed
+// additionally splits into two topic-relevance tiers before that, which is a
+// relevance decision, not a clout one. Follow edges affect *which* posts a
+// viewer sees and how early, never how a popular author outranks a quiet one.
+// Keep it that way.
 
 export async function interestFeed(interestId: string, viewerId: string | undefined, input: CursorInput) {
   const { limit, cursor } = cursorInput.parse(input);

@@ -119,6 +119,14 @@ Immediate (next tasks):
 - `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` · `pnpm test`
 - `pnpm infra:up` / `infra:down` (local Postgres+Redis via docker-compose)
 - `pnpm prisma migrate deploy` (apply migrations) · `pnpm db:seed`
+- `SEED_DEMO=1 pnpm db:seed` — also seeds the demo community (20 people, 46 posts,
+  comments + engagement, in `prisma/seed/community/`). Idempotent; every row is
+  flagged `isSeeded` with a `seed-` id prefix. Without the flag only reference
+  data (interests/skills/technologies) is written, which is production-safe.
+  `SEED_PASSWORD=…` pins the shared account password; otherwise one is generated
+  and printed once on the run that creates the accounts.
+- `pnpm tsx scripts/purge-seed.ts [--yes]` — remove all seeded content, real
+  accounts untouched. Dry run by default.
 - `pnpm tsx scripts/make-admin.ts <email> SUPER_ADMIN`
 
 # Recovery Prompt

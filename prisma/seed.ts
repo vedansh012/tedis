@@ -7,6 +7,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/server/services/auth/password";
+import { seedCommunity } from "./seed/community";
 
 const prisma = new PrismaClient();
 
@@ -293,6 +294,12 @@ async function main() {
       await prisma.community.update({ where: { id: community.id }, data: { threadsCount: 1 } });
     }
   }
+
+  // The wider community — twenty people with a real feed behind them. Lives in
+  // prisma/seed/community/ because it is a corpus, not a script; this stays the
+  // single entry point. Gated with everything else above: demo content only.
+  console.log("Seeding community…");
+  await seedCommunity(prisma);
 
   console.log("✅ Seed complete.");
 }

@@ -71,6 +71,16 @@ model User {
   // Community-contribution score (e.g. approved interest suggestions). Denormalized.
   rewardPoints Int @default(0)
 
+  /**
+   * True for accounts created by the demo seed rather than by a real signup.
+   *
+   * This is the boundary between the seeded community and real users: it lets
+   * the UI disclose demo content, lets `scripts/purge-seed.ts` remove all of it
+   * in one transaction, and guarantees a real signup can never be mistaken for
+   * seeded data. Never set outside `prisma/seed/`.
+   */
+  isSeeded Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -115,6 +125,7 @@ model User {
   @@index([status])
   @@index([role])
   @@index([deletedAt])
+  @@index([isSeeded])
   @@map("users")
 }
 
@@ -304,6 +315,19 @@ model Profile {
   avatarUrl  String?
   bannerUrl  String?
   pronouns   String?
+
+  // Where they build. Free text on purpose — "self-employed", "final year @ NIT
+  // Hamirpur" and "Stripe" are all valid answers and none of them is an entity
+  // we want to own as a table.
+  company String?
+  // IC seniority signal used for people-discovery filtering. One of
+  // features/profile/constants.ts EXPERIENCE_LEVELS; stored as text so adding a
+  // level is not a migration.
+  experienceLevel String?
+
+  // Proof-of-work links. Rendered as verified-looking chips on the profile.
+  githubUrl   String?
+  linkedinUrl String?
 
   // denormalized counters (maintained by services)
   followersCount Int @default(0)
@@ -507,6 +531,10 @@ model Post {
   authorId    String
   type        PostType   @default(UPDATE)
   visibility  Visibility @default(PUBLIC)
+  // Optional headline. Short updates have none (the body IS the post, like a
+  // tweet); articles, tutorials and launches do. Nullable rather than empty-string
+  // so "has a title" is a real query, not a length check.
+  title       String?
   body        String     @db.Text
   // optional attachments to context objects
   interestId  String? @map("universeId")
@@ -526,6 +554,9 @@ model Post {
   // quality/ranking score maintained by the feed ranker (not engagement-maximizing).
   score          Float @default(0)
 
+  /** Demo-seed content. See User.isSeeded. */
+  isSeeded Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -537,6 +568,7 @@ model Post {
   media     PostMedia[]
   comments  Comment[]
   shares    PostShare[]
+  tags      PostTag[]
 
   // keyset pagination + interest/author feeds
   @@index([createdAt, id])
@@ -544,6 +576,8 @@ model Post {
   @@index([interestId, createdAt])
   @@index([communityId, createdAt])
   @@index([deletedAt])
+  // Ranked feeds + trending read "recent, then by score".
+  @@index([score, createdAt])
   @@map("posts")
 }
 
@@ -563,6 +597,12 @@ model PostMedia {
   height       Int?
   durationSec  Int? // video length
   altText      String?
+  /**
+   * Tiny base64 WebP (~20x20) inlined as a data URI for blur-up loading. Kept on
+   * the row rather than derived at request time so the placeholder ships with the
+   * same query that fetches the media — no second round trip before first paint.
+   */
+  blurDataUrl  String?   @db.Text
   sortOrder    Int       @default(0)
   post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
 
@@ -596,6 +636,9 @@ model Comment {
   // threading
   parentId       String?
   reactionsCount Int     @default(0)
+
+  /** Demo-seed content. See User.isSeeded. */
+  isSeeded Boolean @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -656,6 +699,47 @@ model Bookmark {
   @@index([userId, createdAt])
   @@index([targetType, targetId])
   @@map("bookmarks")
+}
+
+/**
+ * A hashtag, extracted from post bodies at write time.
+ *
+ * Tags are deliberately NOT free-text-searched out of `posts.body` at read time:
+ * trending needs to rank thousands of tags by recent usage, which is a GROUP BY
+ * over an indexed join, not 5000 regex scans. Extraction lives in
+ * `features/feed/tags.ts` so seeded and real posts produce identical rows.
+ */
+model Tag {
+  id    String @id @default(cuid())
+  // citext: #Rust and #rust are the same tag. `name` is the canonical display
+  // form (first casing seen); `slug` is the lookup key.
+  name  String @unique @db.Citext
+  slug  String @unique
+
+  // Denormalized lifetime usage. Trending uses a windowed count instead, but
+  // this drives "N posts" on the tag chip without an aggregate.
+  postsCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  posts     PostTag[]
+
+  @@index([postsCount])
+  @@map("tags")
+}
+
+model PostTag {
+  postId String
+  tagId  String
+  // Denormalized from the post so trending can window by time without joining
+  // back to posts for every candidate row.
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId, createdAt])
+  @@map("post_tags")
 }
 
 // ============================================================

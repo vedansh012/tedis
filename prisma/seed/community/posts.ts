@@ -66,22 +66,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "daniel-checkout-ship",
-    author: "daniel",
-    type: "UPDATE",
-    interest: "web-development",
-    body: "New checkout is live for all merchants as of this morning. 🎉\n\nThe interesting part wasn't the UI, it was making every step idempotent. A merchant in Kano with a flaky connection will retry a payment four times, and all four requests will arrive — sometimes minutes apart, sometimes out of order. Idempotency keys on every mutation, and a ledger that refuses to double-write.\n\nWe went from ~2.3% duplicate-charge support tickets to zero in the last two weeks.\n\n#payments #fintech #postgres",
-    images: ["dashboardBlue"],
-    daysAgo: 6,
-    comments: [
-      { author: "tobias", body: "Zero is a strong claim. Are you enforcing that with a unique constraint on the ledger or in application code?", hoursAfter: 3 },
-      { author: "daniel", body: "Unique constraint on (merchant_id, idempotency_key). App code checks first for a nice error, but the DB is what actually guarantees it. Never trust the app layer for money.", hoursAfter: 4, replyTo: 0 },
-      { author: "marcus", body: "\"All four requests will arrive\" is the sentence I wish someone had said to me three years ago. Congrats on the ship.", hoursAfter: 9 },
-      { author: "fatima", body: "Do you rate-limit the retry path? Idempotency protects correctness but it's still a free amplification vector if the key is attacker-chosen.", hoursAfter: 20 },
-      { author: "daniel", body: "Yes — per-merchant token bucket in front of it. Good instinct though, that was added after a very educational load test.", hoursAfter: 22, replyTo: 3 },
-    ],
-  },
-  {
     key: "sofia-empty-states",
     author: "sofia",
     type: "UPDATE",
@@ -112,21 +96,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "tobias-explain-analyze",
-    author: "tobias",
-    type: "UPDATE",
-    interest: "system-design",
-    body: "A report that took 90 seconds now takes 400ms, and I didn't change a single line of application code.\n\nThe query planner was choosing a nested loop because the stats said the filter would match ~12 rows. It matched 400,000. The table hadn't been analyzed since a bulk import in March.\n\nANALYZE. That was the fix. Four months of everyone assuming \"reporting is just slow.\"\n\n#postgres #performance #databases",
-    images: ["codeCloseup"],
-    daysAgo: 18,
-    comments: [
-      { author: "rohan", body: "I've been bitten by exactly this after a backfill. Now autovacuum settings are the first thing I check on any inherited warehouse.", hoursAfter: 2 },
-      { author: "daniel", body: "The \"X is just slow\" belief is so expensive. It stops anyone from ever profiling it.", hoursAfter: 6 },
-      { author: "wei", body: "Curious whether the nested loop was actually wrong, or right for 12 rows and catastrophic at 400k. Planner did its job with bad input.", hoursAfter: 12 },
-      { author: "tobias", body: "Exactly the latter. The planner was reasoning correctly from a four-month-old lie.", hoursAfter: 14, replyTo: 2 },
-    ],
-  },
-  {
     key: "ananya-desk-setup",
     author: "ananya",
     type: "UPDATE",
@@ -139,20 +108,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "meera", body: "The saved-three-months keyboard hits. Enjoy it — nothing you buy later will feel as good.", hoursAfter: 4 },
       { author: "marcus", body: "Genuinely one of the better setups I've seen this week, because something real is getting made on it.", hoursAfter: 9 },
       { author: "hannah", body: "The flickering lamp detail 😭 good luck with the capstone!", hoursAfter: 30 },
-    ],
-  },
-  {
-    key: "yuki-offline-first",
-    author: "yuki",
-    type: "UPDATE",
-    interest: "mobile-development",
-    body: "Our drivers lose signal in basements, tunnels, and one specific loading bay in Yokohama. So the app stopped treating the network as a thing that exists. 📵\n\nEvery action writes to a local queue first and the UI updates immediately. Sync is a background detail the driver never thinks about. If they're offline for six hours the app simply doesn't care.\n\nCrash-free sessions went up, but the real result is that support stopped getting \"the app froze\" calls. It was never frozen. It was waiting for a request that was never going to complete.\n\n#flutter #mobiledev #offlinefirst",
-    images: ["phoneHomeScreen"],
-    daysAgo: 27,
-    comments: [
-      { author: "meera", body: "Optimistic local writes changed our app too. The hard part was conflict resolution — how do you handle two edits to the same record from different devices?", hoursAfter: 5 },
-      { author: "yuki", body: "Last-write-wins on a server timestamp, plus a per-field merge for the three fields where that wasn't acceptable. Not elegant but drivers don't share records often.", hoursAfter: 8, replyTo: 0 },
-      { author: "hannah", body: "\"It was never frozen, it was waiting\" — that's most perceived performance problems in one line.", hoursAfter: 14 },
     ],
   },
   {
@@ -204,21 +159,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "rohan-warehouse-rebuild",
-    author: "rohan",
-    type: "UPDATE",
-    interest: "data-science",
-    body: "Replaced the last of the four scheduled queries I inherited. The warehouse now rebuilds incrementally in 6 minutes instead of a 3-hour full refresh that started at 4am and finished whenever it felt like it. ⏱️\n\nI did this one table at a time over five months. Everyone told me to just rewrite the whole thing. The rewrite would still be in progress and finance would still be waiting on Monday numbers.\n\nIncremental migration is slower and it's almost always right.\n\n#dataengineering #analytics",
-    images: ["dashboardCharts"],
-    daysAgo: 39,
-    comments: [
-      { author: "tobias", body: "Five months of boring correct decisions beats a heroic rewrite every time. Nobody gives talks about this.", hoursAfter: 5 },
-      { author: "chris", body: "The 4am job that finishes \"whenever\" is such a specific kind of dread. Congrats on killing it.", hoursAfter: 13 },
-      { author: "emily", body: "Did you keep the old pipeline running in parallel to diff the outputs?", hoursAfter: 20 },
-      { author: "rohan", body: "For six weeks, yes. Caught two silent discrepancies I'd never have found otherwise. Worth every bit of the extra cost.", hoursAfter: 23, replyTo: 2 },
-    ],
-  },
-  {
     key: "chris-multicloud",
     author: "chris",
     type: "DISCUSSION",
@@ -232,20 +172,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "chris", body: "That's fair and it's the strongest version of the argument. Regulatory portability is a real requirement — \"what if AWS raises prices\" is not.", hoursAfter: 8, replyTo: 1 },
       { author: "wei", body: "Also worth separating multi-cloud from avoiding proprietary lock-in at the data layer. Postgres everywhere is cheap insurance; a cross-cloud control plane is not.", hoursAfter: 19 },
       { author: "daniel", body: "We're single-cloud and the thing that has actually bitten us is regional capacity, not vendor failure. Nobody plans for that one.", hoursAfter: 30 },
-    ],
-  },
-  {
-    key: "meera-scroll-jank",
-    author: "meera",
-    type: "UPDATE",
-    interest: "mobile-development",
-    body: "Chased a scroll stutter for four days. It was date formatting. 📅\n\nWe were building a DateFormatter inside the cell configuration method — so, once per cell, on every scroll. Instruments showed 40% of the frame budget going into formatter initialisation.\n\nHoisted it to a static. Stutter gone. Four days for a two-line diff, which is the most iOS performance work has ever been.\n\n#iosdev #swift #performance",
-    images: ["uiAppScreen"],
-    daysAgo: 48,
-    comments: [
-      { author: "yuki", body: "DateFormatter is astonishingly expensive and nothing warns you. Same trap exists in Flutter with intl.", hoursAfter: 4 },
-      { author: "hannah", body: "The web equivalent is Intl.NumberFormat in a render loop. Identical bug, different framework.", hoursAfter: 9 },
-      { author: "wei", body: "Four days to find, two lines to fix — that ratio is basically the definition of a performance bug.", hoursAfter: 21 },
     ],
   },
   {
@@ -313,21 +239,6 @@ export const POSTS: readonly SeedPost[] = [
 
   // ---------------------------------------------------------------- videos --
   {
-    key: "yuki-app-walkthrough",
-    author: "yuki",
-    type: "UPDATE",
-    interest: "mobile-development",
-    body: "Driver app walkthrough, recorded on a three-year-old mid-range Android because that's what our users actually carry. 📱\n\nEverything in this clip works with airplane mode on. The sync indicator is the only thing that changes.\n\nRecording on the real device is humbling. It ran beautifully on my emulator and dropped frames on the first screen here.\n\n#flutter #mobiledev",
-    video: "pexelsPhone",
-    daysAgo: 8,
-    comments: [
-      { author: "meera", body: "Testing on the oldest device your users have should be the default, not a nice-to-have. Emulators lie constantly.", hoursAfter: 5 },
-      { author: "hannah", body: "Same discipline as testing web on throttled 3G. Your dev machine is the least representative device you own.", hoursAfter: 12 },
-      { author: "ananya", body: "Wait, everything works in airplane mode? I want to understand how the queue is structured.", hoursAfter: 27 },
-      { author: "yuki", body: "Local write first, background sync worker second. Happy to write it up properly if there's interest.", hoursAfter: 30, replyTo: 2 },
-    ],
-  },
-  {
     key: "sofia-motion-spec",
     author: "sofia",
     type: "UPDATE",
@@ -357,21 +268,6 @@ export const POSTS: readonly SeedPost[] = [
     ],
   },
   {
-    key: "rohan-dashboard-live",
-    author: "rohan",
-    type: "UPDATE",
-    interest: "data-science",
-    body: "The Monday morning dashboard, now updating live instead of waiting for a nightly batch. 📊\n\nFinance used to open this at 9am and see Friday's numbers. Now it's about 90 seconds behind reality. Same data, same warehouse — the difference is incremental materialised views instead of a full recompute.\n\nThe head of finance said \"oh, that's just correct now\" which is the highest praise data work ever receives.\n\n#dataengineering #analytics #sql",
-    video: "pexelsAnalytics",
-    daysAgo: 26,
-    comments: [
-      { author: "tobias", body: "\"Oh, that's just correct now\" is genuinely the goal. Nobody thanks you for infrastructure that works.", hoursAfter: 4 },
-      { author: "marcus", body: "Going from Friday's numbers to 90 seconds changes what decisions people are even willing to make. That's a product change, not a data change.", hoursAfter: 10 },
-      { author: "chris", body: "What's the refresh cost look like? Incremental views can get expensive if the base tables churn a lot.", hoursAfter: 21 },
-      { author: "rohan", body: "About 4x the compute of the nightly job spread across the day, so cheaper at peak. The churn is mostly appends, which helps a lot.", hoursAfter: 24, replyTo: 2 },
-    ],
-  },
-  {
     key: "hannah-profiling-session",
     author: "hannah",
     type: "UPDATE",
@@ -397,20 +293,6 @@ export const POSTS: readonly SeedPost[] = [
       { author: "tobias", body: "The gap between synthetic and production benchmarks is where most \"10x faster\" claims live.", hoursAfter: 5 },
       { author: "arjun", body: "Noisy neighbours are the variable nobody can reproduce locally and everybody hits in prod.", hoursAfter: 12 },
       { author: "chris", body: "Appreciate you publishing the caveat above the number rather than in a footnote.", hoursAfter: 23 },
-    ],
-  },
-  {
-    key: "meera-instruments-trace",
-    author: "meera",
-    type: "UPDATE",
-    interest: "programming",
-    body: "What 60fps and 48fps actually look like side by side. 👀\n\nI recorded this because \"it feels a bit janky\" is impossible to argue with in a planning meeting, and a trace is not. Once you can see the dropped frames, the ticket stops being subjective and starts being a bug.\n\nHalf of performance work is measurement, and the other half is making the measurement visible to whoever decides priorities.\n\n#iosdev #performance",
-    video: "pexelsDesk",
-    daysAgo: 35,
-    comments: [
-      { author: "hannah", body: "Making the measurement visible to whoever prioritises is the whole game. A number in your terminal convinces nobody.", hoursAfter: 6 },
-      { author: "sofia", body: "Side-by-side video is the single most effective way I've found to get design quality issues taken seriously too.", hoursAfter: 14 },
-      { author: "yuki", body: "Stealing this technique for our next roadmap conversation, thank you.", hoursAfter: 25 },
     ],
   },
   {

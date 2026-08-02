@@ -27,11 +27,18 @@ export function Composer({
   user,
   lockedProjectId,
   lockedProjectName,
+  onPosted,
 }: {
   user: { displayName: string; avatarUrl: string | null };
   /** When set, every post is attached to this project and the project picker is hidden. */
   lockedProjectId?: string;
   lockedProjectName?: string;
+  /**
+   * Fired after a post is created successfully. Used by the standalone
+   * /new/post page to navigate back to the feed; the inline composers (home,
+   * project timeline) omit it and simply clear in place, exactly as before.
+   */
+  onPosted?: () => void;
 }) {
   const utils = trpc.useUtils();
   const interests = trpc.interest.mine.useQuery();
@@ -67,6 +74,7 @@ export function Composer({
       await utils.feed.home.invalidate();
       // Keep the attached project's timeline fresh.
       await utils.project.timeline.invalidate();
+      onPosted?.();
     },
     onError: (e) => setNotice(e.message),
   });

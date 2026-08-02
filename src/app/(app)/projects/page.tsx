@@ -28,7 +28,7 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">Work being built in the open.</p>
         </div>
-        <Link href="/new">
+        <Link href="/new/project">
           <Button size="sm"><Plus size={16} /> New</Button>
         </Link>
       </header>

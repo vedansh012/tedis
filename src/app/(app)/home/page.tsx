@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useInView } from "@/hooks/use-in-view";
-import { Composer } from "@/components/feed/composer";
 import { InterestPills } from "@/components/feed/interest-pills";
 import { PostCard } from "@/components/feed/post-card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +10,6 @@ import { TedisMark } from "@/components/brand/tedis-mark";
 
 export default function HomePage() {
   const [interest, setInterest] = useState<string | null>(null);
-  const me = trpc.auth.me.useQuery();
   const { ref, inView } = useInView();
 
   const feed = trpc.feed.home.useInfiniteQuery(
@@ -31,8 +29,6 @@ export default function HomePage() {
         <TedisMark size={92} float priority />
         <p className="text-sm text-muted-foreground">Build in the open</p>
       </div>
-
-      {me.data && <Composer user={{ displayName: me.data.displayName, avatarUrl: null }} />}
 
       <div className="sticky top-0 z-10 -mx-4 bg-surface/80 px-4 pt-1 backdrop-blur md:mx-0 md:px-0">
         <InterestPills value={interest} onChange={setInterest} />

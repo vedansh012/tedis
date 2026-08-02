@@ -19,6 +19,11 @@ jobs:
     env:
       APP_URL: http://localhost:3000
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      # Required, not optional: schema.prisma declares `directUrl`, and Prisma
+      # errors on an unset one rather than falling back to DATABASE_URL — so
+      # `prisma validate` fails before any other step runs without this.
+      # Same value here; CI never connects, it only parses the schema.
+      DIRECT_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
       REDIS_URL: redis://localhost:6379
       SESSION_SECRET: ci-dummy-session-secret-at-least-32-chars-long
       CSRF_SECRET: ci-dummy-csrf-secret-at-least-32-chars-long-xx

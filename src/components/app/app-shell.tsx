@@ -9,6 +9,7 @@ import { trpc } from "@/lib/trpc/client";
 import { Avatar } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { TedisMark } from "@/components/brand/tedis-mark";
+import { TrendingRail } from "@/components/app/trending-rail";
 
 interface ShellUser {
   username: string;
@@ -157,7 +158,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       </header>
 
       {/* ---------- Main content ---------- */}
-      <main className="md:pl-[72px] lg:pl-[260px]">
+      <main className="md:pl-[72px] lg:pl-[260px] wide:pr-[320px]">
         {/*
           pb-nav-b clears the fixed bottom nav *and* the home indicator.
 
@@ -174,6 +175,9 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
           {children}
         </div>
       </main>
+
+      {/* ---------- Desktop right rail (≥1440px) ---------- */}
+      <TrendingRail />
 
       {/* ---------- Mobile bottom nav ---------- */}
       <nav

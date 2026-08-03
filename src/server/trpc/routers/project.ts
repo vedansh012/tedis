@@ -15,6 +15,21 @@ export const projectRouter = router({
     .input(z.object({ limit: z.number().int().min(1).max(12).default(6) }).optional())
     .query(({ input }) => project.trendingProjects(input?.limit)),
 
+  /** Compact top-N for the right-rail trending panel. */
+  trendingPanel: publicProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(20).default(8) }).optional())
+    .query(({ input }) => project.rankedProjects(input?.limit ?? 8, 0)),
+
+  /** Full ranked leaderboard, paginated (page 0 = top). */
+  ranking: publicProcedure
+    .input(
+      z.object({
+        page: z.number().int().min(0).max(200).default(0),
+        pageSize: z.number().int().min(1).max(50).default(25),
+      }),
+    )
+    .query(({ input }) => project.rankedProjects(input.pageSize, input.page * input.pageSize)),
+
   byUser: publicProcedure.input(z.object({ userId: z.string() })).query(({ input }) =>
     project.listUserProjects(input.userId),
   ),

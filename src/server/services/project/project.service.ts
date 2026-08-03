@@ -80,6 +80,94 @@ export function trendingProjects(limit = 6) {
   });
 }
 
+/**
+ * Time-decayed "hot" ranking. One indexed SQL pass — score computed in
+ * Postgres so we never load N rows into Node just to sort them.
+ *
+ *   score = weighted_engagement / (age_hours + 2)^gravity
+ *
+ *   weighted_engagement =
+ *       3·respects + 2·comments + 2·bookmarks + 4·followers + 2·ln(1+stars)
+ *
+ * Freshness uses greatest(createdAt, updatedAt) so a live build-log stays hot.
+ * Gravity=1.6 (between HN's 1.5 and Reddit's ~1.8) — halves the score roughly
+ * every ~30h so a 2-day-old post needs ~3× the engagement of a fresh one.
+ */
+const HOT_GRAVITY = 1.6;
+
+export interface RankedProject {
+  id: string;
+  slug: string;
+  name: string;
+  tagline: string | null;
+  status: ProjectStatus;
+  coverUrl: string | null;
+  reactionsCount: number;
+  commentsCount: number;
+  ownerUsername: string;
+  ownerDisplayName: string;
+  ownerAvatarUrl: string | null;
+  interestSlug: string | null;
+  interestName: string | null;
+  interestAccent: string | null;
+  score: number;
+  rank: number;
+}
+
+export async function rankedProjects(limit: number, offset = 0): Promise<RankedProject[]> {
+  return prisma.$queryRaw<RankedProject[]>`
+    SELECT
+      p.id,
+      p.slug,
+      p.name,
+      p.tagline,
+      p.status,
+      p."coverUrl",
+      p."reactionsCount",
+      p."commentsCount",
+      u.username        AS "ownerUsername",
+      u."displayName"   AS "ownerDisplayName",
+      pr."avatarUrl"    AS "ownerAvatarUrl",
+      i.slug            AS "interestSlug",
+      i.name            AS "interestName",
+      i."accentColor"   AS "interestAccent",
+      (
+        (3.0 * p."reactionsCount"
+         + 2.0 * p."commentsCount"
+         + 2.0 * p."bookmarksCount"
+         + 4.0 * p."followersCount"
+         + 2.0 * ln(1 + COALESCE(p."githubStars", 0)))
+        /
+        POWER(
+          GREATEST(EXTRACT(EPOCH FROM (NOW() - GREATEST(p."createdAt", p."updatedAt"))) / 3600.0, 0) + 2.0,
+          ${HOT_GRAVITY}
+        )
+      )::float8                                       AS score,
+      (ROW_NUMBER() OVER (ORDER BY
+        (3.0 * p."reactionsCount"
+         + 2.0 * p."commentsCount"
+         + 2.0 * p."bookmarksCount"
+         + 4.0 * p."followersCount"
+         + 2.0 * ln(1 + COALESCE(p."githubStars", 0)))
+        /
+        POWER(
+          GREATEST(EXTRACT(EPOCH FROM (NOW() - GREATEST(p."createdAt", p."updatedAt"))) / 3600.0, 0) + 2.0,
+          ${HOT_GRAVITY}
+        )
+        DESC, p."createdAt" DESC
+      ))::int                                         AS rank
+    FROM projects p
+    JOIN users u        ON u.id = p."ownerId"
+    LEFT JOIN profiles pr ON pr."userId" = u.id
+    LEFT JOIN universes i ON i.id = p."universeId"
+    WHERE p."deletedAt" IS NULL
+      AND p.visibility = 'PUBLIC'
+    ORDER BY score DESC, p."createdAt" DESC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `;
+}
+
 export function listUserProjects(userId: string) {
   return prisma.project.findMany({
     where: { deletedAt: null, ownerId: userId },

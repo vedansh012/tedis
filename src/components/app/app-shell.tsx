@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, Compass, FolderGit2, Users, Bell, Plus, Settings, LogOut, User, Search, Bookmark, MessagesSquare, Menu as MenuIcon, X } from "lucide-react";
+import { Home, Compass, FolderGit2, Users, Bell, Plus, Settings, LogOut, User, Search, Bookmark, MessagesSquare, Menu as MenuIcon, X, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc/client";
 import { Avatar } from "@/components/ui/avatar";
@@ -224,6 +224,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
             </div>
             <div className="grid grid-cols-2 gap-2">
               <DrawerLink href={`/u/${user.username}`} label="Profile" icon={User} onNavigate={() => setMenuOpen(false)} />
+              <DrawerLink href="/trending" label="Trending" icon={Flame} onNavigate={() => setMenuOpen(false)} />
               {NAV.filter((n) => ["/search", "/projects", "/communities", "/messages", "/saved"].includes(n.href)).map((n) => (
                 <DrawerLink key={n.href} href={n.href} label={n.label} icon={n.icon} onNavigate={() => setMenuOpen(false)} />
               ))}

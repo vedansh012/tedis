@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
@@ -36,6 +36,26 @@ export function OnboardingFlow({
   const [headline, setHeadline] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Rotating placeholder — signals TedIS is for many disciplines, not just code.
+  const HEADLINE_EXAMPLES = [
+    "Building a CV model for wildlife cameras",
+    "Prototyping a foldable EV charger",
+    "Sketching a co-op housing block in Bengaluru",
+    "Writing a case on D2C churn in tier-2 India",
+    "Designing a component system for a fintech app",
+    "Fine-tuning a small LLM for legal drafting",
+    "Pitching a student-run zero-waste café",
+  ];
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  useEffect(() => {
+    if (step !== 1) return;
+    const id = setInterval(
+      () => setPlaceholderIndex((i) => (i + 1) % HEADLINE_EXAMPLES.length),
+      2600,
+    );
+    return () => clearInterval(id);
+  }, [step, HEADLINE_EXAMPLES.length]);
 
   const avatarUpdate = trpc.profile.update.useMutation();
   const complete = trpc.profile.completeOnboarding.useMutation({
@@ -151,7 +171,8 @@ export function OnboardingFlow({
           >
             <h1 className="text-3xl font-semibold tracking-tight">Make it yours</h1>
             <p className="mt-2 text-muted-foreground">
-              Add a photo and a line about what you&rsquo;re working on. You can skip and do this later.
+              Add a photo and one line about what you&rsquo;re working on. Both are optional &mdash;
+              you can skip and add them later from Settings.
             </p>
 
             <div className="mt-8 space-y-6">
@@ -175,9 +196,13 @@ export function OnboardingFlow({
                 name="headline"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
-                placeholder="Building a CV model for wildlife cameras"
+                placeholder={HEADLINE_EXAMPLES[placeholderIndex]}
                 maxLength={120}
               />
+              <p className="-mt-3 text-xs text-muted-foreground">
+                Coder, designer, MBA, architect, researcher, founder &mdash; anything you&rsquo;re
+                making counts.
+              </p>
               {error && (
                 <p role="alert" className="text-sm font-medium text-destructive">
                   {error}
@@ -185,13 +210,25 @@ export function OnboardingFlow({
               )}
             </div>
 
-            <div className="mt-8 flex items-center justify-between">
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
               <Button variant="ghost" onClick={() => setStep(0)}>
                 Back
               </Button>
-              <Button onClick={submit} loading={complete.isPending}>
-                Enter TedIS
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setHeadline("");
+                    submit();
+                  }}
+                  disabled={complete.isPending}
+                >
+                  Skip for now
+                </Button>
+                <Button onClick={submit} loading={complete.isPending}>
+                  Enter TedIS
+                </Button>
+              </div>
             </div>
           </motion.div>
         )}

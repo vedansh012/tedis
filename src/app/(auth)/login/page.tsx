@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/auth/field";
 
 const STATUS_MESSAGES: Record<string, string> = {
-  INVALID_CREDENTIALS: "That email or password is incorrect.",
+  INVALID_CREDENTIALS: "That email/username or password is incorrect.",
   LOCKED: "Too many failed attempts. Your account is locked for 15 minutes.",
   MFA_REQUIRED: "This account requires two-factor authentication.",
 };
@@ -44,7 +44,10 @@ export default function LoginPage() {
         return;
       }
       if (result.status === "UNVERIFIED") {
-        setUnverified(variables.email);
+        // Only surface if they actually typed an email — for username logins
+        // we don't know the address without revealing it, so fall through to
+        // the generic notice.
+        setUnverified(variables.identifier.includes("@") ? variables.identifier : null);
         return;
       }
       setNotice(STATUS_MESSAGES[result.status] ?? "Unable to sign in.");
@@ -61,11 +64,16 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit((data) => login.mutate(data))} className="space-y-4" noValidate>
         <Field
-          label="Email"
-          type="email"
-          autoComplete="email"
-          {...register("email")}
-          error={errors.email?.message}
+          label="Email or username"
+          type="text"
+          // `username` is the standard hint for a login identifier field —
+          // password managers pair it with `current-password` below regardless
+          // of whether the user typed an email or a handle.
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          {...register("identifier")}
+          error={errors.identifier?.message}
         />
         <div className="space-y-1.5">
           <Field

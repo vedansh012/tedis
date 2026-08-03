@@ -41,8 +41,18 @@ export const registerSchema = z.object({
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+// Accepts an email OR a username. The server decides which by looking for
+// an "@" — we don't ask the user to pick, and both formats hit the same
+// (constant-time) code path so nothing leaks about which accounts exist.
+export const loginIdentifierSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "Enter your email or username")
+  .max(254);
+
 export const loginSchema = z.object({
-  email: emailSchema,
+  identifier: loginIdentifierSchema,
   password: z.string().min(1, "Enter your password"),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

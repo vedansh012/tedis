@@ -226,11 +226,14 @@ export type LoginError = "INVALID_CREDENTIALS" | "LOCKED" | "MFA_REQUIRED" | "UN
 export type LoginSuccess = AuthSuccess;
 
 export async function login(
-  input: { email: string; password: string },
+  input: { identifier: string; password: string },
   meta: RequestMeta,
 ): Promise<Result<LoginSuccess, LoginError>> {
+  // Email vs username is decided purely by the presence of "@" — both columns
+  // are @db.Citext so lookups are case-insensitive without extra work.
+  const isEmail = input.identifier.includes("@");
   const user = await prisma.user.findUnique({
-    where: { email: input.email },
+    where: isEmail ? { email: input.identifier } : { username: input.identifier },
     include: { password: true },
   });
 

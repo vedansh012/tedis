@@ -89,7 +89,7 @@ export const authRouter = router({
   // ---- login -------------------------------------------------------------
   login: publicMutation.input(loginSchema).mutation(async ({ ctx, input }) => {
     await limitOrThrow(`login:ip:${ctx.ipAddress ?? "unknown"}`, RateLimits.loginPerIp);
-    await limitOrThrow(`login:acct:${input.email}`, RateLimits.login);
+    await limitOrThrow(`login:acct:${input.identifier}`, RateLimits.login);
 
     const result = await auth.login(input, { ipAddress: ctx.ipAddress, userAgent: ctx.userAgent });
     if (result.ok) {

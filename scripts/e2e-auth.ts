@@ -158,14 +158,14 @@ async function main() {
   {
     // Correct password, but unverified → no session issued.
     const sink = new Headers();
-    const blocked = await caller(sink, "203.0.113.2").auth.login({ email: EMAILS.happy, password: PW });
+    const blocked = await caller(sink, "203.0.113.2").auth.login({ identifier: EMAILS.happy, password: PW });
     assert("status" in blocked && blocked.status === "UNVERIFIED", "unverified login returns UNVERIFIED");
     assert(!sessionFromSink(sink), "no session cookie issued while unverified");
 
     // A wrong password on an unverified account must still look like a normal
     // credential failure — otherwise this endpoint enumerates registered emails.
     const wrong = await caller(new Headers(), "203.0.113.2").auth.login({
-      email: EMAILS.happy,
+      identifier: EMAILS.happy,
       password: "TotallyWrong999",
     });
     assert(
@@ -194,7 +194,7 @@ async function main() {
   console.log("\n▶ 3. Login + logout (now verified)");
   {
     const sink = new Headers();
-    const res = await caller(sink, "203.0.113.2").auth.login({ email: EMAILS.happy, password: PW });
+    const res = await caller(sink, "203.0.113.2").auth.login({ identifier: EMAILS.happy, password: PW });
     assert("status" in res && res.status === "SUCCESS", "login returns SUCCESS after verification");
     happySession = sessionFromSink(sink) ?? "";
     const meCtx = await authedContext(happySession, new Headers());
@@ -211,9 +211,9 @@ async function main() {
 
   console.log("\n▶ 4. Wrong password / unknown account → INVALID_CREDENTIALS");
   {
-    const bad = await caller(new Headers(), "203.0.113.3").auth.login({ email: EMAILS.happy, password: "wrongpassword1" });
+    const bad = await caller(new Headers(), "203.0.113.3").auth.login({ identifier: EMAILS.happy, password: "wrongpassword1" });
     assert("status" in bad && bad.status === "INVALID_CREDENTIALS", "wrong password rejected");
-    const unknown = await caller(new Headers(), "203.0.113.3").auth.login({ email: "nobody@nowhere.test", password: "whatever123" });
+    const unknown = await caller(new Headers(), "203.0.113.3").auth.login({ identifier: "nobody@nowhere.test", password: "whatever123" });
     assert("status" in unknown && unknown.status === "INVALID_CREDENTIALS", "unknown account rejected (no enumeration on login)");
   }
 
@@ -222,7 +222,7 @@ async function main() {
     // Cookie present, header MISSING (built directly so no default fills it in).
     const noCsrfCtx = makeContext({ csrfCookie: CSRF, csrfHeader: undefined, ip: "203.0.113.5", sink: new Headers() });
     await expectThrow(
-      () => createCaller(noCsrfCtx).auth.login({ email: EMAILS.happy, password: PW }),
+      () => createCaller(noCsrfCtx).auth.login({ identifier: EMAILS.happy, password: PW }),
       "csrf",
       "mutation without matching CSRF header is FORBIDDEN",
     );
@@ -237,11 +237,11 @@ async function main() {
     );
     let lockedSeen = false;
     for (let i = 0; i < 11; i++) {
-      const r = await authService.login({ email: EMAILS.lock, password: "definitelyWrong1" }, { ipAddress: "203.0.113.6" });
+      const r = await authService.login({ identifier: EMAILS.lock, password: "definitelyWrong1" }, { ipAddress: "203.0.113.6" });
       if (!r.ok && r.error === "LOCKED") lockedSeen = true;
     }
     assert(lockedSeen, "account locks after threshold of failures");
-    const stillLocked = await authService.login({ email: EMAILS.lock, password: PW }, { ipAddress: "203.0.113.6" });
+    const stillLocked = await authService.login({ identifier: EMAILS.lock, password: PW }, { ipAddress: "203.0.113.6" });
     assert(!stillLocked.ok && stillLocked.error === "LOCKED", "correct password refused while locked");
   }
 
@@ -261,16 +261,16 @@ async function main() {
     // revoke below.
     await authService.verifyEmail(await issueToken(userId, "EMAIL_VERIFICATION", EMAILS.reset), {});
     const loginSink = new Headers();
-    await caller(loginSink, "203.0.113.7").auth.login({ email: EMAILS.reset, password: "OldPass123" });
+    await caller(loginSink, "203.0.113.7").auth.login({ identifier: EMAILS.reset, password: "OldPass123" });
     const oldSession = sessionFromSink(loginSink) ?? "";
     assert((await validateSessionToken(oldSession)) !== null, "pre-reset session valid");
     const rawReset = await issueToken(userId, "PASSWORD_RESET", EMAILS.reset);
     await caller(new Headers(), "203.0.113.7").auth.resetPassword({ token: rawReset, password: "BrandNew456" });
 
     assert((await validateSessionToken(oldSession)) === null, "existing sessions revoked after reset");
-    const oldLogin = await caller(new Headers(), "203.0.113.7").auth.login({ email: EMAILS.reset, password: "OldPass123" });
+    const oldLogin = await caller(new Headers(), "203.0.113.7").auth.login({ identifier: EMAILS.reset, password: "OldPass123" });
     assert("status" in oldLogin && oldLogin.status === "INVALID_CREDENTIALS", "old password no longer works");
-    const newLogin = await caller(new Headers(), "203.0.113.7").auth.login({ email: EMAILS.reset, password: "BrandNew456" });
+    const newLogin = await caller(new Headers(), "203.0.113.7").auth.login({ identifier: EMAILS.reset, password: "BrandNew456" });
     assert("status" in newLogin && newLogin.status === "SUCCESS", "new password works");
   }
 

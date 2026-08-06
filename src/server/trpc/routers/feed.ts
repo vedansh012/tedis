@@ -4,6 +4,7 @@ import { router, publicProcedure, protectedProcedure, protectedMutation } from "
 import { cursorInput } from "@/lib/pagination";
 import { GIT_REPO_URL_MAX, normalizeGitRepoUrl } from "@/features/feed/git-repo";
 import * as feed from "@/server/services/feed/feed.service";
+import { isTrustedMediaUrl } from "@/server/services/media/storage";
 
 const postTypeEnum = z.enum(["UPDATE", "QUESTION", "RESOURCE", "DISCUSSION", "MILESTONE"]);
 const reactableEnum = z.enum(["POST", "PROJECT", "COMMENT"]);
@@ -56,7 +57,7 @@ export const feedRouter = router({
           .array(
             z.object({
               type: z.enum(["IMAGE", "VIDEO"]),
-              url: z.string().startsWith("/api/media/"),
+              url: z.string().refine(isTrustedMediaUrl, "Media URL is not from a trusted storage backend."),
               thumbnailUrl: z.string().nullish(),
               width: z.number().int().positive().nullish(),
               height: z.number().int().positive().nullish(),

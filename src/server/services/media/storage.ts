@@ -26,6 +26,18 @@ export const UPLOAD_DIR = path.join(process.cwd(), "storage", "uploads");
 const PUBLIC_PREFIX = "/api/media";
 const S3_KEY_PREFIX = "uploads";
 
+/**
+ * True when `url` looks like an object we just wrote — either the local
+ * `/api/media/<name>` path or `<S3_PUBLIC_URL>/uploads/<name>` on the S3
+ * backend. Used by mutations that accept a media URL from the client to reject
+ * arbitrary off-site URLs.
+ */
+export function isTrustedMediaUrl(url: string): boolean {
+  if (url.startsWith(`${PUBLIC_PREFIX}/`)) return true;
+  const cfg = s3Config();
+  return cfg !== null && url.startsWith(`${cfg.publicUrl}/${S3_KEY_PREFIX}/`);
+}
+
 export interface StoredMedia {
   url: string;
   type: "IMAGE" | "VIDEO";

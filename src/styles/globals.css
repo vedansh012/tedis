@@ -3,34 +3,33 @@
 @tailwind utilities;
 
 /*
- * TedIS design tokens.
- * Palette: neutral-led and calm; content is colorful, chrome is quiet.
- * Brand accent = "TedIS Violet" (deliberately not LinkedIn blue).
+ * TedIS design tokens — "Ink & Ember".
+ * Warm ink neutrals with a single ember accent; content is colorful, chrome is quiet.
  * All foreground/background pairings meet WCAG AA (>= 4.5:1 for text).
  */
 @layer base {
   :root {
     --radius: 0.625rem;
 
-    --background: 0 0% 100%;
-    --foreground: 224 20% 12%;
-    --surface: 240 20% 99%;
+    --background: 40 33% 97%;
+    --foreground: 30 17% 9%;
+    --surface: 0 0% 100%;
 
     --card: 0 0% 100%;
-    --card-foreground: 224 20% 12%;
+    --card-foreground: 30 17% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 20% 12%;
+    --popover-foreground: 30 17% 9%;
 
-    --primary: 24 100% 46%; /* TedIS orange — darkened slightly so white text is legible */
+    --primary: 18 78% 49%; /* Ember — darkened so white text stays legible */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 30 20% 96%;
-    --secondary-foreground: 24 20% 20%;
+    --secondary: 40 30% 94%;
+    --secondary-foreground: 30 15% 18%;
 
-    --muted: 30 20% 96%;
-    --muted-foreground: 24 6% 44%; /* 4.6:1 on white */
+    --muted: 40 30% 94%;
+    --muted-foreground: 30 10% 38%; /* AA on cream */
 
-    --accent: 24 100% 46%;
+    --accent: 18 78% 49%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 48%;
@@ -40,43 +39,45 @@
     --warning: 38 92% 45%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 30 12% 90%;
-    --input: 30 12% 88%;
-    --ring: 24 100% 46%;
+    --border: 40 30% 87%;
+    --input: 40 25% 85%;
+    --ring: 18 78% 49%;
   }
 
   .dark {
-    --background: 224 24% 7%;
-    --foreground: 220 16% 92%;
-    --surface: 224 22% 9%;
+    /* Matched to the live tedis.uk/signup screenshot — near-pure black ground
+       with a vivid ember accent; text on the primary is dark ink for punch. */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+    --surface: 0 0% 6%;
 
-    --card: 224 22% 10%;
-    --card-foreground: 220 16% 92%;
-    --popover: 224 22% 10%;
-    --popover-foreground: 220 16% 92%;
+    --card: 0 0% 6%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 96%;
 
-    --primary: 24 100% 55%; /* TedIS orange, brightened for dark surfaces */
-    --primary-foreground: 20 45% 8%;
+    --primary: 20 90% 55%; /* Vivid ember from the screenshot */
+    --primary-foreground: 20 40% 10%;
 
-    --secondary: 24 12% 16%;
-    --secondary-foreground: 30 16% 92%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 92%;
 
-    --muted: 24 12% 16%;
-    --muted-foreground: 30 8% 65%; /* AA on dark surface */
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 65%;
 
-    --accent: 24 100% 55%;
-    --accent-foreground: 20 45% 8%;
+    --accent: 20 90% 55%;
+    --accent-foreground: 20 40% 10%;
 
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
     --success: 152 52% 48%;
-    --success-foreground: 224 40% 8%;
+    --success-foreground: 0 0% 8%;
     --warning: 38 92% 55%;
-    --warning-foreground: 224 40% 8%;
+    --warning-foreground: 0 0% 8%;
 
-    --border: 24 10% 20%;
-    --input: 24 10% 22%;
-    --ring: 24 100% 55%;
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 20 90% 55%;
   }
 }
 

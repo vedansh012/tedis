@@ -169,7 +169,7 @@ function FollowingTab({ userId }: { userId: string }) {
                 <span
                   key={i.interest.name}
                   className="rounded-full px-2 py-0.5 text-xs font-medium"
-                  style={{ backgroundColor: (i.interest.accentColor ?? "#FF6B00") + "1a", color: i.interest.accentColor ?? "#FF6B00" }}
+                  style={{ backgroundColor: (i.interest.accentColor ?? "#e2531a") + "1a", color: i.interest.accentColor ?? "#e2531a" }}
                 >
                   {i.interest.name}
                 </span>

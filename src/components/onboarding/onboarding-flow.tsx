@@ -128,7 +128,7 @@ export function OnboardingFlow({
                   >
                     <span
                       className="flex size-9 items-center justify-center rounded-lg"
-                      style={{ backgroundColor: (u.accentColor ?? "#FF6B00") + "1a", color: u.accentColor ?? "#FF6B00" }}
+                      style={{ backgroundColor: (u.accentColor ?? "#e2531a") + "1a", color: u.accentColor ?? "#e2531a" }}
                     >
                       <InterestIcon iconKey={u.iconKey} size={18} />
                     </span>

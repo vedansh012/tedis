@@ -76,7 +76,7 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
               <Link
                 href={`/interest/${post.interest.slug}`}
                 className="ml-auto rounded-full px-2 py-0.5 text-xs font-medium"
-                style={{ backgroundColor: (post.interest.accentColor ?? "#FF6B00") + "1a", color: post.interest.accentColor ?? "#FF6B00" }}
+                style={{ backgroundColor: (post.interest.accentColor ?? "#e2531a") + "1a", color: post.interest.accentColor ?? "#e2531a" }}
               >
                 {post.interest.name}
               </Link>

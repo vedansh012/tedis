@@ -41,6 +41,7 @@ export function PostMenu({
   onArchivedChange,
   onBodyChange,
 }: PostMenuProps) {
+  const utils = trpc.useUtils();
   const me = trpc.auth.me.useQuery(undefined, { staleTime: 60_000 });
   const isOwner = !!me.data && me.data.id === authorId;
 
@@ -50,17 +51,32 @@ export function PostMenu({
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // Close both popovers *first* on delete success, then invalidate — never
+  // touch a parent that might have unmounted us in the same tick. The refetch
+  // that follows removes the deleted post from every list naturally, so
+  // there's no need for a fragile `deleted` flag on the card itself.
   const del = trpc.feed.deletePost.useMutation({
     onSuccess: () => {
       setConfirmingDelete(false);
       setOpen(false);
-      onDeleted?.();
+      // Invalidate on the next tick so this component finishes its own state
+      // updates and the ConfirmDialog exits cleanly before its parent
+      // (PostCard) is unmounted by the cache refresh.
+      setTimeout(() => {
+        void utils.feed.invalidate();
+        void utils.project.timeline.invalidate();
+        onDeleted?.();
+      }, 0);
     },
   });
   const archive = trpc.feed.setArchived.useMutation({
     onSuccess: (res) => {
       setOpen(false);
+      // Flip the badge locally for instant feedback; invalidate to converge
+      // every other surface (public feeds, project timelines) with the server.
       onArchivedChange?.(res.archived);
+      void utils.feed.invalidate();
+      void utils.project.timeline.invalidate();
     },
   });
 
@@ -197,8 +213,15 @@ function EditPostDialog({
   onSaved: (body: string) => void;
 }) {
   const [body, setBody] = useState(initialBody);
+  const utils = trpc.useUtils();
   const mutation = trpc.feed.updatePost.useMutation({
-    onSuccess: () => onSaved(body.trim()),
+    onSuccess: () => {
+      // Local update via `onSaved` gives instant feedback; the invalidate
+      // catches any other place the post appears (feeds, timeline).
+      onSaved(body.trim());
+      void utils.feed.invalidate();
+      void utils.project.timeline.invalidate();
+    },
   });
   const trimmed = body.trim();
   const dirty = trimmed !== initialBody.trim();

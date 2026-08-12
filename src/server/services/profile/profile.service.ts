@@ -105,9 +105,11 @@ async function helpedPeopleCount(userId: string): Promise<number> {
 
 /**
  * GDPR "right to erasure". Password-confirmed. Revokes sessions, deletes
- * credentials, scrubs profile PII, and anonymizes + soft-deletes the account so
- * authored content stays attributed to "Deleted account" (services filter on
- * deletedAt). The freed email/username are randomized so they don't block reuse.
+ * credentials, scrubs profile PII, soft-deletes every post the user authored
+ * (so nothing they wrote lingers in public feeds), and anonymizes + soft-
+ * deletes the account itself. The freed email/username are randomized so they
+ * don't block reuse. Feed queries additionally filter by author.deletedAt as
+ * a defensive check for any already-orphaned posts from earlier deletions.
  */
 export async function deleteOwnAccount(
   userId: string,
@@ -129,6 +131,14 @@ export async function deleteOwnAccount(
     prisma.profile.updateMany({
       where: { userId },
       data: { bio: null, headline: null, location: null, websiteUrl: null, avatarUrl: null, bannerUrl: null },
+    }),
+    // Cascade the soft-delete to every post they authored, so the account's
+    // content disappears from feeds at the same instant the account does.
+    // Only touches rows that were still visible — already-deleted posts keep
+    // their original deletedAt for the audit trail.
+    prisma.post.updateMany({
+      where: { authorId: userId, deletedAt: null },
+      data: { deletedAt: now },
     }),
     prisma.user.update({
       where: { id: userId },

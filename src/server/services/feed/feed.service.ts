@@ -113,6 +113,10 @@ export async function homeFeed(viewerId: string, input: HomeFeedInput) {
     deletedAt: null,
     archivedAt: null,
     visibility: "PUBLIC",
+    // Defence-in-depth: cascade at delete time flips the post's own deletedAt,
+    // so this branch only fires for orphaned rows from earlier deletions that
+    // predate the cascade. Cheap indexed FK filter either way.
+    author: { deletedAt: null },
     authorId: { notIn: [viewerId, ...hiddenIds] },
   };
 
@@ -179,7 +183,14 @@ export async function interestFeed(interestId: string, viewerId: string | undefi
   const { limit, cursor } = cursorInput.parse(input);
   const decoded = decodeCursor(cursor);
   const rows = await prisma.post.findMany({
-    where: { deletedAt: null, archivedAt: null, visibility: "PUBLIC", interestId, ...cursorWhere(decoded) },
+    where: {
+      deletedAt: null,
+      archivedAt: null,
+      visibility: "PUBLIC",
+      interestId,
+      author: { deletedAt: null },
+      ...cursorWhere(decoded),
+    },
     take: limit + 1,
     orderBy: keysetOrderBy,
     select: postSelect,
@@ -199,6 +210,10 @@ export async function userPosts(userId: string, viewerId: string | undefined, in
     where: {
       deletedAt: null,
       authorId: userId,
+      // A soft-deleted account shouldn't have visible posts anywhere. The
+      // cascade in profile.deleteOwnAccount already zeroes them; this filter
+      // covers the ones that pre-dated the cascade.
+      author: { deletedAt: null },
       ...(isSelf ? {} : { archivedAt: null }),
       ...cursorWhere(decoded),
     },
@@ -219,7 +234,12 @@ export async function userPosts(userId: string, viewerId: string | undefined, in
  */
 export async function projectTimeline(projectId: string, viewerId: string | undefined) {
   const rows = await prisma.post.findMany({
-    where: { deletedAt: null, archivedAt: null, projectId },
+    where: {
+      deletedAt: null,
+      archivedAt: null,
+      projectId,
+      author: { deletedAt: null },
+    },
     orderBy: { createdAt: "asc" },
     take: 200,
     select: postSelect,
@@ -277,7 +297,7 @@ export async function createPost(authorId: string, input: CreatePostInput): Prom
 /** Single post with the viewer's interaction state (for the detail page). */
 export async function getPost(id: string, viewerId: string | undefined) {
   const post = await prisma.post.findFirst({
-    where: { id, deletedAt: null },
+    where: { id, deletedAt: null, author: { deletedAt: null } },
     select: { ...postSelect, archivedAt: true, authorId: true },
   });
   if (!post) return null;
@@ -301,7 +321,10 @@ export async function listBookmarkedPosts(viewerId: string, input: CursorInput) 
   const page = toPage(bookmarks, limit);
   const postIds = page.items.map((b) => b.targetId);
   const posts = postIds.length
-    ? await prisma.post.findMany({ where: { id: { in: postIds }, deletedAt: null, archivedAt: null }, select: postSelect })
+    ? await prisma.post.findMany({
+        where: { id: { in: postIds }, deletedAt: null, archivedAt: null, author: { deletedAt: null } },
+        select: postSelect,
+      })
     : [];
   // Preserve bookmark order.
   const byId = new Map(posts.map((p) => [p.id, p]));

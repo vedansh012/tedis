@@ -29,14 +29,12 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
   // (so already-liked/saved posts don't pop as they scroll into view).
   const [reactBump, setReactBump] = useState(0);
   const [saveBump, setSaveBump] = useState(0);
-  // Owner-driven mutations: rather than invalidate every feed query, we drop
-  // the card / flip the badge / rewrite the body in place. If a stale copy
-  // does slip through, the next fetch corrects it because the server filters.
-  const [deleted, setDeleted] = useState(false);
+  // Owner-driven mutations: archive and body edits get local state for
+  // instant feedback; delete is handled entirely by cache invalidation in
+  // PostMenu (the refetch drops the post from every list, and this card
+  // unmounts via React's normal reconciliation — no hooks-order tricks).
   const [archived, setArchived] = useState(!!post.archivedAt);
   const [body, setBody] = useState(post.body);
-
-  if (deleted) return null;
 
   const react = trpc.feed.toggleReaction.useMutation({
     onError: () => {
@@ -107,7 +105,6 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
           authorLabel={`@${post.author.username}`}
           body={body}
           archived={archived}
-          onDeleted={() => setDeleted(true)}
           onArchivedChange={setArchived}
           onBodyChange={setBody}
         />

@@ -148,7 +148,7 @@ export function LandingLight() {
           >
             <Link
               href="/signup"
-              className="group inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF6B00] px-8 py-3.5 font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:-translate-y-0.5 hover:bg-[#f26200] hover:shadow-xl hover:shadow-orange-500/30 active:translate-y-0"
+              className="group relative inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF6B00] px-8 py-3.5 font-semibold text-white shadow-[0_1px_0_rgba(255,255,255,0.35)_inset,0_-1px_0_rgba(0,0,0,0.15)_inset,0_8px_24px_-6px_rgba(255,107,0,0.45),0_0_0_1px_rgba(255,107,0,0.4)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-[#f26200] hover:shadow-[0_1px_0_rgba(255,255,255,0.35)_inset,0_-1px_0_rgba(0,0,0,0.15)_inset,0_14px_32px_-8px_rgba(255,107,0,0.6),0_0_0_1px_rgba(255,107,0,0.5)] active:translate-y-0 active:shadow-[0_1px_0_rgba(255,255,255,0.35)_inset,0_-1px_0_rgba(0,0,0,0.15)_inset,0_4px_12px_-3px_rgba(255,107,0,0.4)]"
             >
               Choose your interests
               <ArrowRight size={18} className="transition-transform group-hover:translate-x-0.5" />
@@ -164,7 +164,10 @@ export function LandingLight() {
           <p className="mb-4 text-center text-sm text-neutral-500">Pick the topics you&rsquo;re curious about</p>
           <ul className="flex flex-wrap justify-center gap-2">
             {TOPICS.map((t) => (
-              <li key={t} className="rounded-full border border-neutral-200 bg-white/80 px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur">
+              <li
+                key={t}
+                className="cursor-default rounded-full border border-neutral-200 bg-white/80 px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm backdrop-blur transition-all duration-150 hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-[0_6px_16px_-8px_rgba(255,107,0,0.35)]"
+              >
                 {t}
               </li>
             ))}
@@ -196,9 +199,10 @@ export function LandingLight() {
               </p>
               <Link
                 href="/signup"
-                className="mt-7 inline-flex items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 font-semibold text-[#FF6B00] shadow-lg transition-transform hover:scale-[1.02]"
+                className="group mt-7 inline-flex items-center justify-center gap-2 rounded-xl bg-white px-7 py-3.5 font-semibold text-[#FF6B00] shadow-[0_1px_0_rgba(255,255,255,0.8)_inset,0_-1px_0_rgba(0,0,0,0.06)_inset,0_8px_24px_-6px_rgba(0,0,0,0.25),0_0_0_1px_rgba(255,255,255,0.6)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_1px_0_rgba(255,255,255,0.8)_inset,0_-1px_0_rgba(0,0,0,0.06)_inset,0_14px_32px_-8px_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.7)] active:translate-y-0"
               >
-                Create your account <ArrowRight size={18} />
+                Create your account
+                <ArrowRight size={18} className="transition-transform group-hover:translate-x-0.5" />
               </Link>
             </div>
           </motion.div>

@@ -60,6 +60,16 @@ export const adminRouter = router({
 
   auditLogs: adminProcedure.query(() => admin.recentAuditLogs()),
 
+  // ---- Deleted-post review ------------------------------------------------
+
+  deletedPosts: adminProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }).optional())
+    .query(({ input }) => admin.listDeletedPosts(input?.limit ?? 50)),
+
+  restorePost: adminMutation
+    .input(z.object({ postId: z.string() }))
+    .mutation(({ ctx, input }) => admin.restoreDeletedPost(ctx.auth.user.id, input.postId)),
+
   // ---- Interests: suggestion queue + taxonomy management ----
 
   interestRequests: adminProcedure

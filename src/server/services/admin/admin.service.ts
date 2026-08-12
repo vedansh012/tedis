@@ -182,6 +182,53 @@ export function openReports(limit = 50) {
   });
 }
 
+// ---- soft-deleted post moderation -----------------------------------------
+
+/**
+ * List soft-deleted posts, newest tomb first. Admins can review what authors
+ * (or admins) have removed and, if needed, restore a wrongful deletion. Only
+ * deletedAt IS NOT NULL rows are returned — this view intentionally never
+ * mixes into normal feed queries.
+ */
+export function listDeletedPosts(limit = 50) {
+  return prisma.post.findMany({
+    where: { deletedAt: { not: null } },
+    orderBy: { deletedAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      body: true,
+      createdAt: true,
+      deletedAt: true,
+      author: { select: { id: true, username: true, displayName: true } },
+    },
+  });
+}
+
+/**
+ * Undo a soft delete. Nulls deletedAt so the row re-enters every feed query
+ * (all of which filter deletedAt: null). Emits an audit entry so the action
+ * is attributable — restoring content is a moderation decision that should
+ * be reviewable later.
+ */
+export async function restoreDeletedPost(actorId: string, postId: string) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { id: true, deletedAt: true },
+  });
+  if (!post) return { ok: false as const, reason: "not_found" as const };
+  if (!post.deletedAt) return { ok: false as const, reason: "not_deleted" as const };
+
+  await prisma.post.update({ where: { id: postId }, data: { deletedAt: null } });
+  await writeAudit({
+    actorId,
+    action: "admin.post.restore",
+    targetType: "POST",
+    targetId: postId,
+  });
+  return { ok: true as const };
+}
+
 /** Recent admin/audit activity for the Logs view. */
 export function recentAuditLogs(limit = 100) {
   return prisma.auditLog.findMany({

@@ -185,7 +185,7 @@ export function LandingDark() {
         <section className="mx-auto max-w-5xl px-6 pb-24">
           <motion.div
             variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true, margin: "-60px" }}
-            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#f5a56a] via-[#f38a4a] to-[#f27222] px-8 py-14 text-center shadow-xl shadow-primary/25"
+            className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#FF6B00] to-[#ff8a3d] px-8 py-14 text-center shadow-xl shadow-primary/25"
           >
             <div aria-hidden className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" />
             <div aria-hidden className="absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-white/10" />

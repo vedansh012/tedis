@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import type { MouseEvent } from "react";
+import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { ArrowRight, Rocket, GraduationCap, Users2, Sparkles } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { TedisMark } from "@/components/brand/tedis-mark";
 
 /**
  * Landing page. Deliberately always-light (white-dominant, orange accents) so the
  * marketing surface reads consistently regardless of the viewer's app theme.
- * Motion is used for a soft staggered entrance; the brand mark floats.
+ * Motion is used for a soft staggered entrance; the brand mark floats and the
+ * feature cards carry a subtle pointer-tracked 3D tilt.
  */
 
 const TOPICS = [
@@ -27,6 +30,72 @@ const fadeUp = {
   hidden: { opacity: 0, y: 16 },
   show: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.6, ease, delay: i * 0.08 } }),
 };
+
+// Feature card with pointer-tracked 3D tilt. Small angles (~7°) so it reads as
+// depth, not as a gimmick. Spring smooths the reset when the pointer leaves.
+// Visual (bg / border / shadow / typography) is identical to the plain v2 card;
+// only rotation + a pointer-tracked orange glow are added.
+function TiltCard({
+  icon: Icon,
+  title,
+  body,
+  index,
+}: {
+  icon: LucideIcon;
+  title: string;
+  body: string;
+  index: number;
+}) {
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const rx = useSpring(useTransform(my, [-0.5, 0.5], [7, -7]), { stiffness: 250, damping: 20 });
+  const ry = useSpring(useTransform(mx, [-0.5, 0.5], [-7, 7]), { stiffness: 250, damping: 20 });
+  const glowX = useTransform(mx, (v) => `${(v + 0.5) * 100}%`);
+  const glowY = useTransform(my, (v) => `${(v + 0.5) * 100}%`);
+
+  function onMove(e: MouseEvent<HTMLDivElement>) {
+    const r = e.currentTarget.getBoundingClientRect();
+    mx.set((e.clientX - r.left) / r.width - 0.5);
+    my.set((e.clientY - r.top) / r.height - 0.5);
+  }
+  function onLeave() { mx.set(0); my.set(0); }
+
+  return (
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      whileInView="show"
+      viewport={{ once: true, margin: "-60px" }}
+      custom={index}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+      style={{ perspective: 900 }}
+      className="group [transform-style:preserve-3d]"
+    >
+      <motion.div
+        style={{ rotateX: rx, rotateY: ry, transformStyle: "preserve-3d" }}
+        className="relative rounded-2xl border border-neutral-100 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_10px_30px_-15px_rgba(255,107,0,0.15)] transition-shadow duration-300 group-hover:shadow-[0_1px_3px_rgba(0,0,0,0.05),0_20px_45px_-15px_rgba(255,107,0,0.25)]"
+      >
+        <motion.span
+          aria-hidden
+          style={{
+            background: `radial-gradient(220px circle at ${glowX.get()} ${glowY.get()}, rgba(255,107,0,0.14), transparent 65%)`,
+            backgroundPositionX: glowX,
+            backgroundPositionY: glowY,
+          }}
+          className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        />
+        <div style={{ transform: "translateZ(28px)" }} className="relative">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-orange-50 text-[#FF6B00]">
+            <Icon size={22} />
+          </span>
+          <h3 className="mt-4 text-lg font-semibold">{title}</h3>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-neutral-600">{body}</p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
 
 export function LandingLight() {
   return (
@@ -55,7 +124,7 @@ export function LandingLight() {
         {/* hero */}
         <section className="mx-auto max-w-4xl px-6 pb-20 pt-14 text-center sm:pt-20">
           <motion.div variants={fadeUp} initial="hidden" animate="show" className="flex justify-center">
-            <TedisMark size={104} float priority className="shadow-xl shadow-orange-500/20" />
+            <TedisMark size={104} float interactive priority className="shadow-xl shadow-orange-500/20" />
           </motion.div>
 
           <motion.p
@@ -79,7 +148,7 @@ export function LandingLight() {
           >
             <Link
               href="/signup"
-              className="group inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF6B00] px-8 py-3.5 font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:bg-[#f26200] hover:shadow-xl hover:shadow-orange-500/30"
+              className="group inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF6B00] px-8 py-3.5 font-semibold text-white shadow-lg shadow-orange-500/25 transition-all hover:-translate-y-0.5 hover:bg-[#f26200] hover:shadow-xl hover:shadow-orange-500/30 active:translate-y-0"
             >
               Choose your interests
               <ArrowRight size={18} className="transition-transform group-hover:translate-x-0.5" />
@@ -106,17 +175,7 @@ export function LandingLight() {
         <section className="mx-auto max-w-5xl px-6 pb-24">
           <div className="grid gap-5 sm:grid-cols-3">
             {FEATURES.map((f, i) => (
-              <motion.div
-                key={f.title}
-                variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true, margin: "-60px" }} custom={i}
-                className="rounded-2xl border border-neutral-100 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_10px_30px_-15px_rgba(255,107,0,0.15)]"
-              >
-                <span className="flex size-11 items-center justify-center rounded-xl bg-orange-50 text-[#FF6B00]">
-                  <f.icon size={22} />
-                </span>
-                <h3 className="mt-4 text-lg font-semibold">{f.title}</h3>
-                <p className="mt-1.5 text-[15px] leading-relaxed text-neutral-600">{f.body}</p>
-              </motion.div>
+              <TiltCard key={f.title} icon={f.icon} title={f.title} body={f.body} index={i} />
             ))}
           </div>
         </section>

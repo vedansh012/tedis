@@ -111,15 +111,14 @@ function DeleteAccountSection() {
           </Button>
         ) : (
           <div className="mt-4 space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="del-pw">Confirm your password</Label>
-              <input
-                id="del-pw"
+            <div className="max-w-sm">
+              <Field
+                label="Confirm your password"
+                name="del-pw"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
-                className="h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 text-sm transition-[color,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               />
             </div>
             <div className="space-y-1.5">

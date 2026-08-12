@@ -140,6 +140,12 @@ export async function deleteOwnAccount(
       where: { authorId: userId, deletedAt: null },
       data: { deletedAt: now },
     }),
+    // Same cascade for projects — otherwise they linger in listings, trending
+    // and the hot-score ranker attributed to "Deleted account".
+    prisma.project.updateMany({
+      where: { ownerId: userId, deletedAt: null },
+      data: { deletedAt: now },
+    }),
     prisma.user.update({
       where: { id: userId },
       data: {

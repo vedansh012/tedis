@@ -62,6 +62,9 @@ export async function listProjects(input: ListProjectsInput) {
     where: {
       deletedAt: null,
       visibility: "PUBLIC",
+      // Hide projects whose owner soft-deleted their account. Cheap indexed
+      // FK filter; every public project surface applies the same predicate.
+      owner: { deletedAt: null },
       ...(input.interestId ? { interestId: input.interestId } : {}),
       ...cursorWhere(decoded),
     },
@@ -74,7 +77,7 @@ export async function listProjects(input: ListProjectsInput) {
 
 export function trendingProjects(limit = 6) {
   return prisma.project.findMany({
-    where: { deletedAt: null, visibility: "PUBLIC" },
+    where: { deletedAt: null, visibility: "PUBLIC", owner: { deletedAt: null } },
     orderBy: [{ reactionsCount: "desc" }, { createdAt: "desc" }],
     take: limit,
     select: cardSelect,
@@ -163,6 +166,7 @@ export async function rankedProjects(limit: number, offset = 0): Promise<RankedP
     LEFT JOIN universes i ON i.id = p."universeId"
     WHERE p."deletedAt" IS NULL
       AND p.visibility = 'PUBLIC'
+      AND u."deletedAt" IS NULL
     ORDER BY score DESC, p."createdAt" DESC
     LIMIT ${limit}
     OFFSET ${offset}
@@ -171,7 +175,7 @@ export async function rankedProjects(limit: number, offset = 0): Promise<RankedP
 
 export function listUserProjects(userId: string) {
   return prisma.project.findMany({
-    where: { deletedAt: null, ownerId: userId },
+    where: { deletedAt: null, ownerId: userId, owner: { deletedAt: null } },
     orderBy: keysetOrderBy,
     select: cardSelect,
   });
@@ -179,7 +183,7 @@ export function listUserProjects(userId: string) {
 
 export async function getProjectBySlug(slug: string, viewerId?: string) {
   const project = await prisma.project.findFirst({
-    where: { slug, deletedAt: null },
+    where: { slug, deletedAt: null, owner: { deletedAt: null } },
     select: {
       ...cardSelect,
       description: true,

@@ -87,4 +87,16 @@ export const feedRouter = router({
   share: protectedMutation
     .input(z.object({ postId: z.string(), target: z.enum(["COPY_LINK", "WEB_SHARE"]).default("COPY_LINK") }))
     .mutation(({ ctx, input }) => feed.sharePost(ctx.auth.user.id, input.postId, input.target)),
+
+  updatePost: protectedMutation
+    .input(z.object({ id: z.string(), body: z.string().trim().min(1).max(5000) }))
+    .mutation(({ ctx, input }) => feed.updatePost(input.id, ctx.auth.user.id, input.body)),
+
+  deletePost: protectedMutation
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => feed.deletePost(input.id, ctx.auth.user.id)),
+
+  setArchived: protectedMutation
+    .input(z.object({ id: z.string(), archived: z.boolean() }))
+    .mutation(({ ctx, input }) => feed.setPostArchived(input.id, ctx.auth.user.id, input.archived)),
 });

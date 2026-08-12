@@ -29,6 +29,14 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
   // (so already-liked/saved posts don't pop as they scroll into view).
   const [reactBump, setReactBump] = useState(0);
   const [saveBump, setSaveBump] = useState(0);
+  // Owner-driven mutations: rather than invalidate every feed query, we drop
+  // the card / flip the badge / rewrite the body in place. If a stale copy
+  // does slip through, the next fetch corrects it because the server filters.
+  const [deleted, setDeleted] = useState(false);
+  const [archived, setArchived] = useState(!!post.archivedAt);
+  const [body, setBody] = useState(post.body);
+
+  if (deleted) return null;
 
   const react = trpc.feed.toggleReaction.useMutation({
     onError: () => {
@@ -87,12 +95,26 @@ export function PostCard({ post, hideProjectCard }: { post: FeedItem; hideProjec
               {TYPE_LABEL[post.type]}
             </span>
           )}
+          {archived && (
+            <span className="ml-1 mt-0.5 inline-block rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Archived
+            </span>
+          )}
         </div>
-        <PostMenu postId={post.id} authorLabel={`@${post.author.username}`} />
+        <PostMenu
+          postId={post.id}
+          authorId={post.author.id}
+          authorLabel={`@${post.author.username}`}
+          body={body}
+          archived={archived}
+          onDeleted={() => setDeleted(true)}
+          onArchivedChange={setArchived}
+          onBodyChange={setBody}
+        />
       </header>
 
       {/* leading bumps slightly on the wider desktop column — longer lines need a touch more line-height to stay easy to scan. */}
-      {post.body && <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed md:leading-[1.7]">{post.body}</div>}
+      {body && <div className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed md:leading-[1.7]">{body}</div>}
 
       {post.linkUrl && (
         <a

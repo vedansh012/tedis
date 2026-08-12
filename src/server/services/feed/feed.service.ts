@@ -1,4 +1,5 @@
 import type { Prisma, ReactableType, BookmarkableType } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { prisma } from "@/server/db/prisma";
 import { getHiddenUserIds } from "@/server/services/moderation/moderation.service";
 import {
@@ -18,6 +19,9 @@ const postSelect = {
   createdAt: true,
   type: true,
   body: true,
+  // Owner-only state; the client uses this to render the "Archived" badge on
+  // the author's own profile and to toggle the menu between Archive / Unarchive.
+  archivedAt: true,
   linkUrl: true,
   gitRepoUrl: true,
   reactionsCount: true,
@@ -107,6 +111,7 @@ export async function homeFeed(viewerId: string, input: HomeFeedInput) {
 
   const base: Prisma.PostWhereInput = {
     deletedAt: null,
+    archivedAt: null,
     visibility: "PUBLIC",
     authorId: { notIn: [viewerId, ...hiddenIds] },
   };
@@ -174,7 +179,7 @@ export async function interestFeed(interestId: string, viewerId: string | undefi
   const { limit, cursor } = cursorInput.parse(input);
   const decoded = decodeCursor(cursor);
   const rows = await prisma.post.findMany({
-    where: { deletedAt: null, visibility: "PUBLIC", interestId, ...cursorWhere(decoded) },
+    where: { deletedAt: null, archivedAt: null, visibility: "PUBLIC", interestId, ...cursorWhere(decoded) },
     take: limit + 1,
     orderBy: keysetOrderBy,
     select: postSelect,
@@ -187,8 +192,16 @@ export async function interestFeed(interestId: string, viewerId: string | undefi
 export async function userPosts(userId: string, viewerId: string | undefined, input: CursorInput) {
   const { limit, cursor } = cursorInput.parse(input);
   const decoded = decodeCursor(cursor);
+  // Author sees their own archived posts on their profile (with an "Archived"
+  // badge in the UI); everyone else gets a filtered view.
+  const isSelf = viewerId === userId;
   const rows = await prisma.post.findMany({
-    where: { deletedAt: null, authorId: userId, ...cursorWhere(decoded) },
+    where: {
+      deletedAt: null,
+      authorId: userId,
+      ...(isSelf ? {} : { archivedAt: null }),
+      ...cursorWhere(decoded),
+    },
     take: limit + 1,
     orderBy: keysetOrderBy,
     select: postSelect,
@@ -206,7 +219,7 @@ export async function userPosts(userId: string, viewerId: string | undefined, in
  */
 export async function projectTimeline(projectId: string, viewerId: string | undefined) {
   const rows = await prisma.post.findMany({
-    where: { deletedAt: null, projectId },
+    where: { deletedAt: null, archivedAt: null, projectId },
     orderBy: { createdAt: "asc" },
     take: 200,
     select: postSelect,
@@ -265,9 +278,12 @@ export async function createPost(authorId: string, input: CreatePostInput): Prom
 export async function getPost(id: string, viewerId: string | undefined) {
   const post = await prisma.post.findFirst({
     where: { id, deletedAt: null },
-    select: postSelect,
+    select: { ...postSelect, archivedAt: true, authorId: true },
   });
   if (!post) return null;
+  // Archived posts are visible only to the author (so they can unarchive from
+  // the detail page). Everyone else gets a 404.
+  if (post.archivedAt && post.authorId !== viewerId) return null;
   const [decorated] = await decorateViewerState([post], viewerId);
   return decorated ?? null;
 }
@@ -285,7 +301,7 @@ export async function listBookmarkedPosts(viewerId: string, input: CursorInput) 
   const page = toPage(bookmarks, limit);
   const postIds = page.items.map((b) => b.targetId);
   const posts = postIds.length
-    ? await prisma.post.findMany({ where: { id: { in: postIds }, deletedAt: null }, select: postSelect })
+    ? await prisma.post.findMany({ where: { id: { in: postIds }, deletedAt: null, archivedAt: null }, select: postSelect })
     : [];
   // Preserve bookmark order.
   const byId = new Map(posts.map((p) => [p.id, p]));
@@ -366,4 +382,64 @@ export async function toggleBookmark(userId: string, targetType: BookmarkableTyp
   await prisma.$transaction(ops);
   void maintainsCounter;
   return { bookmarked: true };
+}
+
+// ---- owner mutations -------------------------------------------------------
+
+/**
+ * Look up a post and enforce the caller is the author. Centralised so every
+ * mutation returns the same NOT_FOUND / FORBIDDEN codes and no code path
+ * accidentally exposes existence to a non-owner (both refusals look identical
+ * from outside — either "this post doesn't exist" or "you don't own it" would
+ * leak information otherwise).
+ */
+async function assertPostOwner(postId: string, userId: string) {
+  const row = await prisma.post.findFirst({
+    where: { id: postId, deletedAt: null },
+    select: { id: true, authorId: true, archivedAt: true },
+  });
+  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Post not found." });
+  if (row.authorId !== userId) throw new TRPCError({ code: "FORBIDDEN", message: "Not your post." });
+  return row;
+}
+
+/**
+ * Author edits the body of their post. Only body is editable for now — media,
+ * project, interest and Git repo attachments stay as-created, because
+ * replacing media in place has enough failure modes (dangling R2 objects,
+ * mid-upload states) to deserve its own flow.
+ */
+export async function updatePost(postId: string, userId: string, body: string) {
+  await assertPostOwner(postId, userId);
+  const trimmed = body.trim();
+  if (!trimmed) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Post body can't be empty." });
+  }
+  await prisma.post.update({ where: { id: postId }, data: { body: trimmed } });
+  return { ok: true as const };
+}
+
+/**
+ * Soft-delete: sets deletedAt so every read path (which already filters it)
+ * treats the post as gone. Keeps the row so references from comments,
+ * bookmarks and audit history don't dangle.
+ */
+export async function deletePost(postId: string, userId: string) {
+  await assertPostOwner(postId, userId);
+  await prisma.post.update({ where: { id: postId }, data: { deletedAt: new Date() } });
+  return { ok: true as const };
+}
+
+/**
+ * Toggle archived state. Archive hides from public feeds without destroying
+ * anything; unarchive puts it back. Both are idempotent on the current state
+ * so double-clicks and stale caches don't misbehave.
+ */
+export async function setPostArchived(postId: string, userId: string, archived: boolean) {
+  await assertPostOwner(postId, userId);
+  await prisma.post.update({
+    where: { id: postId },
+    data: { archivedAt: archived ? new Date() : null },
+  });
+  return { archived };
 }

@@ -557,9 +557,13 @@ model Post {
   /** Demo-seed content. See User.isSeeded. */
   isSeeded Boolean @default(false)
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  // Owner-hides-from-public: null = visible in feeds; timestamp = hidden
+  // everywhere except the author's own "Archived" surfaces. Separate from
+  // deletedAt so we can distinguish reversible hides from tombstones.
+  archivedAt DateTime?
+  deletedAt  DateTime?
 
   author    User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
   interest  Interest?   @relation(fields: [interestId], references: [id], onDelete: SetNull)
@@ -576,6 +580,7 @@ model Post {
   @@index([interestId, createdAt])
   @@index([communityId, createdAt])
   @@index([deletedAt])
+  @@index([archivedAt])
   // Ranked feeds + trending read "recent, then by score".
   @@index([score, createdAt])
   @@map("posts")

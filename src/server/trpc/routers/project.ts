@@ -66,4 +66,8 @@ export const projectRouter = router({
         repoUrl: input.repoUrl === "" ? null : input.repoUrl,
       }),
     ),
+
+  delete: protectedMutation
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => project.deleteProject(input.id, ctx.auth.user.id)),
 });

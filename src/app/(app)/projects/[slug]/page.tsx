@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { Award, Github, ExternalLink, Users, Share2, Check, FolderGit2, CalendarDays } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { Award, Github, ExternalLink, Users, Share2, Check, FolderGit2, CalendarDays, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/time";
 import { trpc } from "@/lib/trpc/client";
@@ -11,6 +11,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PostCard } from "@/components/feed/post-card";
 import { Composer } from "@/components/feed/composer";
 
@@ -137,7 +138,61 @@ export default function ProjectDetailPage() {
         isOwner={isOwner}
         viewerName={me.data?.displayName ?? ""}
       />
+
+      {isOwner && <DangerZone projectId={p.id} projectName={p.name} />}
     </div>
+  );
+}
+
+/**
+ * Owner-only utility strip at the bottom of the project page. Kept visually
+ * quiet (a subtle destructive-tinted card) so it's discoverable to the owner
+ * without shouting on every render. A destructive action always goes through
+ * ConfirmDialog — one accidental click shouldn't erase a project.
+ */
+function DangerZone({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const del = trpc.project.delete.useMutation({
+    onSuccess: () => {
+      setConfirming(false);
+      // Kick back to the projects home; the deleted project is already filtered
+      // from every list query the next fetch runs.
+      router.push("/home");
+    },
+  });
+
+  return (
+    <>
+      <section className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-destructive">Danger zone</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Delete this project. Posts you attached to it stay on your timeline, but the project itself and its
+          journey view will be gone.
+        </p>
+        <Button
+          variant="destructive"
+          size="sm"
+          className="mt-3"
+          onClick={() => setConfirming(true)}
+        >
+          <Trash2 size={15} /> Delete project
+        </Button>
+      </section>
+
+      {confirming && (
+        <ConfirmDialog
+          title={`Delete "${projectName}"?`}
+          body="This can't be undone from the UI. The project will disappear from every list; attached posts stay on the authors' profiles without the project link."
+          confirmLabel={del.isPending ? "Deleting…" : "Delete project"}
+          destructive
+          disabled={del.isPending}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => del.mutate({ id: projectId })}
+          errorMessage={del.error?.message ?? null}
+        />
+      )}
+    </>
   );
 }
 

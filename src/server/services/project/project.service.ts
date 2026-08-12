@@ -1,4 +1,5 @@
 import type { Prisma, ProjectStatus } from "@prisma/client";
+import { TRPCError } from "@trpc/server";
 import { prisma } from "@/server/db/prisma";
 import { randomToken } from "@/lib/crypto";
 import {
@@ -259,4 +260,29 @@ export async function createProject(ownerId: string, input: CreateProjectInput) 
     return created;
   });
   return project;
+}
+
+/**
+ * Owner-only soft delete. Sets deletedAt so every existing read path (all
+ * project queries already filter deletedAt) treats the project as gone.
+ * Also decrements the profile's projectsCount and, if the project was tagged,
+ * the interest's projectsCount — mirroring what createProject bumped up.
+ * Attached posts stay on their authors' timelines; only the project vanishes.
+ */
+export async function deleteProject(projectId: string, userId: string) {
+  const row = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true, ownerId: true, interestId: true },
+  });
+  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found." });
+  if (row.ownerId !== userId) throw new TRPCError({ code: "FORBIDDEN", message: "Not your project." });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.project.update({ where: { id: projectId }, data: { deletedAt: new Date() } });
+    await tx.profile.update({ where: { userId }, data: { projectsCount: { decrement: 1 } } });
+    if (row.interestId) {
+      await tx.interest.update({ where: { id: row.interestId }, data: { projectsCount: { decrement: 1 } } });
+    }
+  });
+  return { ok: true as const };
 }

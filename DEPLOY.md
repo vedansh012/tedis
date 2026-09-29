@@ -10,6 +10,33 @@ gates every push on typecheck · lint · build.
 
 ---
 
+## 0. Free hosting — Render (replaces Railway)
+
+Everything runs on free tiers: **Render** (web, [render.yaml](render.yaml)),
+**Neon** (Postgres), **Upstash** (Redis), **Cloudflare R2** (media), **Resend** (email).
+
+Free-tier constraints and how they're handled:
+- **Sleeps after 15 min idle** → [keep-awake.yml](.github/workflows/keep-awake.yml)
+  pings `/api/ping` every 10 min. One always-on service fits the 750 free hours/month.
+- **Probes must not touch the DB** → Render's health check, the Docker
+  `HEALTHCHECK` and the pinger all use `/api/ping`, so Neon's compute can still
+  auto-suspend. Use `/api/health` only for manual dependency checks.
+- **512 MB RAM** → `NODE_OPTIONS=--max-old-space-size=384` in `render.yaml`.
+- **No pre-deploy command on free** → run migrations yourself (§3) before pushing
+  code that needs them.
+- **No persistent disk** → media must go to R2 (`S3_*` set).
+
+Cutover:
+1. Render → **New → Blueprint** → pick this repo. It reads `render.yaml` and asks
+   for every `sync: false` secret: copy the current values from Railway's
+   Variables tab (same Neon/Upstash/R2/Resend credentials, nothing to re-provision).
+2. Wait for the first deploy, then check `https://<service>.onrender.com/api/health` returns `200`.
+3. Render → Settings → **Custom Domains** → add `tedis.uk` (and `www`), then
+   update the DNS records at your registrar/Cloudflare to what Render shows.
+   (If Cloudflare proxies the domain, set SSL mode to *Full*.)
+4. Once `https://tedis.uk/api/ping` is served by Render, delete the Railway
+   service. `railway.json` can be deleted then too.
+
 ## 1. Required environment variables
 
 The app **fails fast on boot** if any of these are missing/invalid (`src/config/env.ts`).

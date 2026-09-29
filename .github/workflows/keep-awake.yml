@@ -1,0 +1,20 @@
+name: Keep awake
+
+# Render's free web services sleep after 15 min without traffic, and the next
+# visitor waits ~1 min for a cold start. Pinging every 10 min keeps it warm;
+# one always-on service fits inside Render's 750 free instance-hours/month.
+# Hits /api/ping, which never touches Postgres/Redis, so Neon can still suspend.
+# GitHub may delay or skip scheduled runs under load — for a stricter uptime
+# guarantee, point a free external monitor (e.g. cron-job.org) at the same URL.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping
+        run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://tedis.uk/api/ping

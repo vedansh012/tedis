@@ -19,12 +19,9 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname),
   // Prisma & other server-only packages must not be bundled into RSC output.
   serverExternalPackages: ["@prisma/client", "argon2", "ioredis", "sharp", "@aws-sdk/client-s3"],
-  experimental: {
-    // Re-enabled in Increment 2 once /login, /signup, /explore exist. Enabling
-    // it now would force fake placeholder routes just to satisfy the type check,
-    // which violates the "no placeholder pages" rule.
-    typedRoutes: false,
-  },
+  // Off for now: enabling it forces every <Link href> to be a known route.
+  // Next 15.5 moved this flag out of `experimental`.
+  typedRoutes: false,
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
